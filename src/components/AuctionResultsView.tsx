@@ -17,8 +17,16 @@ export const AuctionResultsView: React.FC<AuctionResultsViewProps> = ({ room, on
 
   useEffect(() => {
     let active = true;
-    fetch('/api/leaderboard')
-      .then((r) => r.json())
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 2000);
+    fetch('/api/leaderboard', { signal: controller.signal })
+      .then((r) => {
+        const ct = r.headers.get('content-type') || '';
+        if (!r.ok || !ct.includes('application/json')) {
+          throw new Error('Static host');
+        }
+        return r.json();
+      })
       .then((data) => {
         if (active && Array.isArray(data.leaderboard)) {
           setLeaderboard(data.leaderboard);
@@ -26,10 +34,13 @@ export const AuctionResultsView: React.FC<AuctionResultsViewProps> = ({ room, on
       })
       .catch(() => {})
       .finally(() => {
+        window.clearTimeout(timeoutId);
         if (active) setLoadingLb(false);
       });
     return () => {
       active = false;
+      window.clearTimeout(timeoutId);
+      controller.abort();
     };
   }, [room?.updatedAt, room?.status, room?.virtualMatches?.length]);
 

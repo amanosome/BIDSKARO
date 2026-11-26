@@ -1,13 +1,19 @@
-import React, { useEffect, useState } from 'react';
-import { AuctionRoomState, AuthUserPublic, LeagueId, PlayMode } from './shared/auctionTypes';
-import { useAuctionSocket } from './hooks/useAuctionSocket';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
+import { AuthUserPublic, LeagueId, PlayMode } from './shared/auctionTypes';
 import { LandingPage } from './components/LandingPage';
-import { HostDashboard, WorkspaceTab } from './components/HostDashboard';
-import { CreateRoomModal } from './components/CreateRoomModal';
-import { AuthModal } from './components/AuthModal';
 import { OfflineIndicator } from './components/PWAInstallButton';
-import { getAuthToken, logoutAuth } from './services/authService';
-import { joinLocalRoom } from './services/localAuctionEngine';
+import { logoutAuth } from './services/authService';
+import type { WorkspaceTab } from './components/HostDashboard';
+
+const ActiveSessionView = lazy(() =>
+  import('./components/ActiveSessionView').then((m) => ({ default: m.ActiveSessionView }))
+);
+const CreateRoomModal = lazy(() =>
+  import('./components/CreateRoomModal').then((m) => ({ default: m.CreateRoomModal }))
+);
+const AuthModal = lazy(() =>
+  import('./components/AuthModal').then((m) => ({ default: m.AuthModal }))
+);
 
 interface ActiveSession {
   roomCode: string;
@@ -89,14 +95,6 @@ export default function App() {
 
   const [joinStatusError, setJoinStatusError] = useState<string | null>(null);
 
-  const socket = useAuctionSocket({
-    roomCode: session?.roomCode || null,
-    participantId: session?.participantId || getOrCreateClientId(),
-    participantName: session?.participantName || authUser?.name || 'User',
-    role: session?.role || 'bidder',
-    teamId: session?.teamId,
-  });
-
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const url = new URL(window.location.href);
@@ -118,10 +116,7 @@ export default function App() {
 
 
 
-  const handleResetDemo = async () => {
-    await fetch('/api/rooms/DEMO5/reset', { method: 'POST' });
-    socket.refresh();
-  };
+
 
   const handleJoinRoom = async (
     roomCode: string,
@@ -171,6 +166,7 @@ export default function App() {
       }
 
       if (!joinedViaServer) {
+        const { joinLocalRoom } = await import('./services/localAuctionEngine');
         const localJoined = joinLocalRoom(roomCode, {
           participantId: storedHostId || pid,
           name,
@@ -237,80 +233,48 @@ export default function App() {
             onJoinRoom={handleJoinRoom}
           />
         </>
-      ) : socket.loading && !socket.room ? (
-        <div className="min-h-screen bg-[#060B18] flex items-center justify-center p-6">
-          <div className="text-center space-y-3">
-            <div className="text-lg font-display font-bold text-white">
-              Connecting to BidsKaro Room {session.roomCode}...
+      ) : (
+        <Suspense
+          fallback={
+            <div className="min-h-screen bg-[#060B18] flex items-center justify-center p-6">
+              <div className="text-sm font-display font-bold text-slate-300">
+                Loading BidsKaro Room {session.roomCode}...
+              </div>
             </div>
-            <p className="text-xs text-slate-400">Synchronizing live purse, rules, and timer.</p>
-          </div>
-        </div>
-      ) : socket.error && !socket.room ? (
-        <div className="min-h-screen bg-[#060B18] flex items-center justify-center p-6">
-          <div className="max-w-md w-full rounded-2xl border border-slate-800 bg-[#0D1526] p-6 text-center space-y-4">
-            <h2 className="text-lg font-display font-bold text-white">Room Unavailable</h2>
-            <p className="text-sm text-red-300">{socket.error}</p>
-            <button
-              type="button"
-              onClick={() => setSession(null)}
-              className="rounded-lg bg-emerald-500 px-5 py-2.5 text-xs font-bold text-slate-950"
-            >
-              Return to BidsKaro Home
-            </button>
-          </div>
-        </div>
-      ) : socket.room ? (
-        <HostDashboard
-          room={socket.room}
-          participantId={session.participantId}
-          participantName={session.participantName}
-          isHost={session.role === 'host' || session.participantId === socket.room.hostId}
-          isSpectator={session.role === 'spectator'}
-          authUser={authUser}
-          assignedTeamId={session.teamId}
-          initialTab={session.initialTab}
-          connected={socket.connected}
-          remainingSeconds={socket.remainingSeconds}
-          bidFeedback={socket.bidFeedback}
-          onClearFeedback={socket.clearFeedback}
-          onSendCommand={socket.sendCommand}
-          onPlaceBid={socket.placeBid}
-          onLeaveRoom={() => {
-            if (session?.roomCode) {
-              socket.sendCommand('leave_room', { participantId: session.participantId, autoFinish: true });
-              fetch(`/api/rooms/${encodeURIComponent(session.roomCode)}/leave`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ participantId: session.participantId }),
-              }).catch(() => {});
-            }
-            setSession(null);
-          }}
-          onResetDemo={handleResetDemo}
-        />
-      ) : null}
+          }
+        >
+          <ActiveSessionView
+            session={session}
+            authUser={authUser}
+            onExitSession={() => setSession(null)}
+          />
+        </Suspense>
+      )}
 
       {createModal.open && (
-        <CreateRoomModal
-          initialLeagueId={createModal.leagueId}
-          initialSeasonYear={createModal.seasonYear}
-          initialPlayMode={createModal.playMode}
-          defaultHostName={authUser?.name || 'Auction Host'}
-          onClose={() => setCreateModal({ open: false })}
-          onCreated={handleCreatedRoom}
-        />
+        <Suspense fallback={null}>
+          <CreateRoomModal
+            initialLeagueId={createModal.leagueId}
+            initialSeasonYear={createModal.seasonYear}
+            initialPlayMode={createModal.playMode}
+            defaultHostName={authUser?.name || 'Auction Host'}
+            onClose={() => setCreateModal({ open: false })}
+            onCreated={handleCreatedRoom}
+          />
+        </Suspense>
       )}
 
       {authModal.open && (
-        <AuthModal
-          initialMode={authModal.mode}
-          onClose={() => setAuthModal({ open: false, mode: 'login' })}
-          onAuthenticated={(user) => {
-            setAuthUser(user);
-            setAuthModal({ open: false, mode: 'login' });
-          }}
-        />
+        <Suspense fallback={null}>
+          <AuthModal
+            initialMode={authModal.mode}
+            onClose={() => setAuthModal({ open: false, mode: 'login' })}
+            onAuthenticated={(user) => {
+              setAuthUser(user);
+              setAuthModal({ open: false, mode: 'login' });
+            }}
+          />
+        </Suspense>
       )}
 
       <OfflineIndicator />

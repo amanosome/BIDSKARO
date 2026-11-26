@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { Suspense, lazy, useMemo, useState } from 'react';
 import {
   ArrowRight,
   Gavel,
@@ -13,9 +13,12 @@ import { AuthUserPublic, LeagueId, PlayMode, SportType } from '../shared/auction
 import { LEAGUES } from '../data/leagues';
 import { BidsKaroLogo, TeamCrest } from './BidsKaroLogo';
 import { PWAInstallButton } from './PWAInstallButton';
-import { AuctionResultsView } from './AuctionResultsView';
 import heroStadiumImg from '../assets/images/hero_stadium_auction_1795655418949.jpg';
 import gavelSpotlightImg from '../assets/images/auction_gavel_spotlight_1795655417958.jpg';
+
+const AuctionResultsView = lazy(() =>
+  import('./AuctionResultsView').then((m) => ({ default: m.AuctionResultsView }))
+);
 
 interface LandingPageProps {
   authUser: AuthUserPublic | null;
@@ -154,6 +157,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             src={heroStadiumImg}
             alt="BidsKaro Floodlit Cricket Auction Arena"
             referrerPolicy="no-referrer"
+            fetchPriority="high"
+            decoding="async"
             className="w-full h-full object-cover opacity-30"
           />
           <div className="absolute inset-0 bg-gradient-to-r from-[#060B18] via-[#060B18]/85 to-[#060B18]/60" />
@@ -211,6 +216,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 src={gavelSpotlightImg}
                 alt="BidsKaro Auctioneer Gavel"
                 referrerPolicy="no-referrer"
+                loading="lazy"
+                decoding="async"
                 className="w-full h-full object-cover opacity-85"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-[#0D1526] via-transparent to-transparent" />
@@ -554,7 +561,15 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
       {/* Global Leaderboard Rankings */}
       <section id="leaderboard" className="max-w-[1240px] mx-auto px-6 py-16">
-        <AuctionResultsView room={null} />
+        <Suspense
+          fallback={
+            <div className="rounded-2xl border border-slate-800 bg-[#0D1526] p-8 text-center text-xs text-slate-400">
+              Loading Global Franchise Leaderboard...
+            </div>
+          }
+        >
+          <AuctionResultsView room={null} />
+        </Suspense>
       </section>
 
       {/* Quiet Editorial Footer */}

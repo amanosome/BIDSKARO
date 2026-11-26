@@ -62,8 +62,10 @@ export function useAuctionSocket(options: UseAuctionSocketOptions) {
 
   const fetchSnapshot = useCallback(async (code: string): Promise<'server' | 'local' | 'error'> => {
     setLoading(true);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 2000);
     try {
-      const res = await fetch(`/api/rooms/${encodeURIComponent(code)}`);
+      const res = await fetch(`/api/rooms/${encodeURIComponent(code)}`, { signal: controller.signal });
       const ct = res.headers.get('content-type') || '';
       if (res.ok && ct.includes('application/json')) {
         const data = await res.json();
@@ -77,6 +79,8 @@ export function useAuctionSocket(options: UseAuctionSocketOptions) {
       }
     } catch {
       // fall through to local check
+    } finally {
+      window.clearTimeout(timeoutId);
     }
 
     const local = getLocalRoom(code);

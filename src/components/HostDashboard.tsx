@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -42,13 +42,26 @@ import {
 } from '../shared/currency';
 import { getNextValidBid } from '../shared/rulesEngine';
 import { BidsKaroLogo, TeamCrest } from './BidsKaroLogo';
-import { AuctionRulesPanel } from './AuctionRulesPanel';
-import { MobileBidderView } from './MobileBidderView';
-import { BigScreenView } from './BigScreenView';
-import { AuctionResultsView } from './AuctionResultsView';
-import { QRInviteModal } from './QRInviteModal';
 import { PWAInstallButton } from './PWAInstallButton';
-import { SeasonFantasyPanel } from './SeasonFantasyPanel';
+
+const AuctionRulesPanel = lazy(() =>
+  import('./AuctionRulesPanel').then((m) => ({ default: m.AuctionRulesPanel }))
+);
+const MobileBidderView = lazy(() =>
+  import('./MobileBidderView').then((m) => ({ default: m.MobileBidderView }))
+);
+const BigScreenView = lazy(() =>
+  import('./BigScreenView').then((m) => ({ default: m.BigScreenView }))
+);
+const AuctionResultsView = lazy(() =>
+  import('./AuctionResultsView').then((m) => ({ default: m.AuctionResultsView }))
+);
+const QRInviteModal = lazy(() =>
+  import('./QRInviteModal').then((m) => ({ default: m.QRInviteModal }))
+);
+const SeasonFantasyPanel = lazy(() =>
+  import('./SeasonFantasyPanel').then((m) => ({ default: m.SeasonFantasyPanel }))
+);
 
 export type WorkspaceTab = 'host' | 'bidder' | 'tv' | 'rules' | 'fantasy' | 'results';
 
@@ -279,12 +292,20 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
   if (activeTab === 'tv') {
     return (
       <div className="min-h-screen bg-[#040812] p-4 sm:p-6">
-        <BigScreenView
-          room={room}
-          remainingSeconds={remainingSeconds}
-          connected={connected}
-          onExitTV={() => setActiveTab('bidder')}
-        />
+        <Suspense
+          fallback={
+            <div className="min-h-[60vh] flex items-center justify-center text-sm text-slate-300">
+              Loading Big Screen TV Broadcast...
+            </div>
+          }
+        >
+          <BigScreenView
+            room={room}
+            remainingSeconds={remainingSeconds}
+            connected={connected}
+            onExitTV={() => setActiveTab('bidder')}
+          />
+        </Suspense>
       </div>
     );
   }
@@ -497,59 +518,67 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
 
       {/* Main Content */}
       <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 py-5">
-        {activeTab === 'rules' && (
-          <AuctionRulesPanel
-            room={room}
-            isHost={canActAsHost}
-            onSaveRules={(patch: Partial<AuctionRules>) => onSendCommand('update_rules', { rules: patch })}
-            onUpdateTeam={(teamId, patch) => onSendCommand('update_team', { teamId, patch })}
-            onConfirmAndStart={() => {
-              if (room.status === 'lobby') {
-                onSendCommand('start_auction', { playerId: room.currentPlayerId });
+        <Suspense
+          fallback={
+            <div className="py-12 text-center text-xs font-medium opacity-70">
+              Loading view...
+            </div>
+          }
+        >
+          {activeTab === 'rules' && (
+            <AuctionRulesPanel
+              room={room}
+              isHost={canActAsHost}
+              onSaveRules={(patch: Partial<AuctionRules>) => onSendCommand('update_rules', { rules: patch })}
+              onUpdateTeam={(teamId, patch) => onSendCommand('update_team', { teamId, patch })}
+              onConfirmAndStart={() => {
+                if (room.status === 'lobby') {
+                  onSendCommand('start_auction', { playerId: room.currentPlayerId });
+                }
+                setActiveTab('bidder');
+              }}
+            />
+          )}
+
+          {activeTab === 'bidder' && (
+            <MobileBidderView
+              room={room}
+              participantId={participantId}
+              participantName={participantName}
+              isHost={canActAsHost}
+              assignedTeamId={assignedTeamId}
+              remainingSeconds={remainingSeconds}
+              bidFeedback={bidFeedback}
+              onClearFeedback={onClearFeedback}
+              onSendCommand={onSendCommand}
+              onOpenInvite={() => setShowQR(true)}
+              onOpenTV={() => setActiveTab('tv')}
+              onPlaceBid={onPlaceBid}
+              onLeaveRoom={() =>
+                setConfirmModal({
+                  title: 'Leave Auction Room?',
+                  message: 'Are you sure you want to leave this auction room? Your seat can be resumed or handled by AI.',
+                  actionLabel: 'Leave Room',
+                  variant: 'red',
+                  onConfirm: onLeaveRoom,
+                })
               }
-              setActiveTab('bidder');
-            }}
-          />
-        )}
+            />
+          )}
 
-        {activeTab === 'bidder' && (
-          <MobileBidderView
-            room={room}
-            participantId={participantId}
-            participantName={participantName}
-            isHost={canActAsHost}
-            assignedTeamId={assignedTeamId}
-            remainingSeconds={remainingSeconds}
-            bidFeedback={bidFeedback}
-            onClearFeedback={onClearFeedback}
-            onSendCommand={onSendCommand}
-            onOpenInvite={() => setShowQR(true)}
-            onOpenTV={() => setActiveTab('tv')}
-            onPlaceBid={onPlaceBid}
-            onLeaveRoom={() =>
-              setConfirmModal({
-                title: 'Leave Auction Room?',
-                message: 'Are you sure you want to leave this auction room? Your seat can be resumed or handled by AI.',
-                actionLabel: 'Leave Room',
-                variant: 'red',
-                onConfirm: onLeaveRoom,
-              })
-            }
-          />
-        )}
+          {activeTab === 'fantasy' && (
+            <SeasonFantasyPanel
+              room={room}
+              isHost={canActAsHost}
+              assignedTeamId={assignedTeamId}
+              onSendCommand={onSendCommand}
+            />
+          )}
 
-        {activeTab === 'fantasy' && (
-          <SeasonFantasyPanel
-            room={room}
-            isHost={canActAsHost}
-            assignedTeamId={assignedTeamId}
-            onSendCommand={onSendCommand}
-          />
-        )}
-
-        {activeTab === 'results' && (
-          <AuctionResultsView room={room} onSendCommand={onSendCommand} />
-        )}
+          {activeTab === 'results' && (
+            <AuctionResultsView room={room} onSendCommand={onSendCommand} />
+          )}
+        </Suspense>
 
         {activeTab === 'host' && canActAsHost && room.status === 'lobby' && (
           <div className="space-y-6">
@@ -1245,7 +1274,11 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
       </main>
 
       {/* QR Modal */}
-      {showQR && <QRInviteModal room={room} onClose={() => setShowQR(false)} />}
+      {showQR && (
+        <Suspense fallback={null}>
+          <QRInviteModal room={room} onClose={() => setShowQR(false)} />
+        </Suspense>
+      )}
 
       {/* Confirmation Modal */}
       {confirmModal && (
