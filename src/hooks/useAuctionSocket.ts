@@ -26,7 +26,7 @@ export function useAuctionSocket(options: UseAuctionSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
 
-  const fetchSnapshot = useCallback(async (code: string) => {
+  const fetchSnapshot = useCallback(async (code: string): Promise<boolean> => {
     setLoading(true);
     try {
       const res = await fetch(`/api/rooms/${encodeURIComponent(code)}`);
@@ -40,8 +40,10 @@ export function useAuctionSocket(options: UseAuctionSocketOptions) {
       }
       setRoom(data.room);
       setError(null);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load auction room.');
+      return false;
     } finally {
       setLoading(false);
     }
@@ -55,7 +57,7 @@ export function useAuctionSocket(options: UseAuctionSocketOptions) {
     }
 
     let disposed = false;
-    fetchSnapshot(roomCode);
+    let failedAttempts = 0;
 
     const connect = () => {
       if (disposed) return;
@@ -69,6 +71,7 @@ export function useAuctionSocket(options: UseAuctionSocketOptions) {
           ws.close();
           return;
         }
+        failedAttempts = 0;
         setConnected(true);
         setError(null);
         ws.send(
@@ -122,13 +125,16 @@ export function useAuctionSocket(options: UseAuctionSocketOptions) {
 
       ws.onclose = () => {
         setConnected(false);
-        if (!disposed) {
+        failedAttempts += 1;
+        if (!disposed && failedAttempts < 5) {
           reconnectTimerRef.current = window.setTimeout(connect, 1500);
         }
       };
     };
 
-    connect();
+    fetchSnapshot(roomCode).then((ok) => {
+      if (!disposed && ok) connect();
+    });
 
     return () => {
       disposed = true;

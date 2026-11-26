@@ -12,9 +12,15 @@ export function clearAuthToken(): void {
 }
 
 export async function fetchAuthStatus(): Promise<{ hasOwner: boolean; ownerEmailConfigured: boolean }> {
-  const res = await fetch('/api/auth/status');
-  if (!res.ok) return { hasOwner: false, ownerEmailConfigured: false };
-  return (await res.json()) as { hasOwner: boolean; ownerEmailConfigured: boolean };
+  try {
+    const res = await fetch('/api/auth/status');
+    if (!res.ok) return { hasOwner: false, ownerEmailConfigured: false };
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) return { hasOwner: false, ownerEmailConfigured: false };
+    return (await res.json()) as { hasOwner: boolean; ownerEmailConfigured: boolean };
+  } catch {
+    return { hasOwner: false, ownerEmailConfigured: false };
+  }
 }
 
 export async function registerWithEmail(params: {
