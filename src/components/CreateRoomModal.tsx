@@ -58,17 +58,35 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
   const [allBiddersCanHost, setAllBiddersCanHost] = useState<boolean>(true);
   const [allowCustomBid, setAllowCustomBid] = useState<boolean>(true);
   const [allowQuickBid, setAllowQuickBid] = useState<boolean>(true);
+  const buildTeamsForMode = (
+    targetLeagueId: LeagueId,
+    targetPlayMode: PlayMode,
+    targetPurseCrores: number,
+    targetHostName: string
+  ) => {
+    const targetLeague = getLeagueById(targetLeagueId);
+    const fullPresets =
+      targetLeagueId === 'CUSTOM'
+        ? DEMO_FIVE_TEAMS
+        : targetLeague.franchises.slice(0, targetLeagueId === 'IPL' ? 10 : 5);
+    const selectedPresets = targetPlayMode === 'ai' ? fullPresets.slice(0, 2) : fullPresets;
+    return selectedPresets.map((t, idx) => ({
+      name: t.name,
+      shortCode: t.shortCode,
+      primaryColor: t.primaryColor,
+      secondaryColor: t.secondaryColor,
+      ownerName:
+        targetPlayMode === 'ai'
+          ? idx === 0
+            ? targetHostName.trim() || 'You'
+            : 'AI Opponent'
+          : t.defaultOwner,
+      purseCrores: targetPurseCrores,
+    }));
+  };
+
   const [teams, setTeams] = useState(() =>
-    (leagueId === 'CUSTOM' ? DEMO_FIVE_TEAMS : league.franchises.slice(0, leagueId === 'IPL' ? 10 : 5)).map(
-      (t) => ({
-        name: t.name,
-        shortCode: t.shortCode,
-        primaryColor: t.primaryColor,
-        secondaryColor: t.secondaryColor,
-        ownerName: t.defaultOwner,
-        purseCrores: 200,
-      })
-    )
+    buildTeamsForMode(leagueId, initialPlayMode, 200, defaultHostName)
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,17 +97,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
     const nextYear = nextLeague.seasons[0]?.year || '2025';
     setSeasonYear(nextYear);
     setRoomName(nextId === 'CUSTOM' ? 'BidsKaro Premier Auction' : `${nextLeague.shortName} ${nextYear} Auction`);
-    const presets = nextId === 'CUSTOM' ? DEMO_FIVE_TEAMS : nextLeague.franchises.slice(0, nextId === 'IPL' ? 10 : 5);
-    setTeams(
-      presets.map((t) => ({
-        name: t.name,
-        shortCode: t.shortCode,
-        primaryColor: t.primaryColor,
-        secondaryColor: t.secondaryColor,
-        ownerName: t.defaultOwner,
-        purseCrores: purseCrores,
-      }))
-    );
+    setTeams(buildTeamsForMode(nextId, playMode, purseCrores, hostName));
   };
 
   const handleMinSquadChange = (val: number) => {
@@ -289,7 +297,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
               <div className="grid grid-cols-2 gap-2">
                 {([
                   { id: 'friends', label: 'Play with Friends', desc: 'Share invite code / QR' },
-                  { id: 'ai', label: 'Play with AI', desc: 'Solo vs AI franchises' },
+                  { id: 'ai', label: 'Play with AI', desc: '2 Teams: You vs 1 AI' },
                 ] as const).map((pm) => (
                   <button
                     key={pm.id}
@@ -297,6 +305,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                     onClick={() => {
                       setPlayMode(pm.id);
                       setAiOpponentsEnabled(pm.id === 'ai');
+                      setTeams(buildTeamsForMode(leagueId, pm.id, purseCrores, hostName));
                     }}
                     className={`rounded-lg border p-2.5 text-left transition-colors ${
                       playMode === pm.id
@@ -736,7 +745,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
           <div className="border-t border-slate-800 pt-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-slate-300">
-                Franchise Teams &amp; Starting Purses ({teams.length} Teams)
+                Franchise Teams &amp; Starting Purses ({teams.length} Teams{playMode === 'ai' ? ' · 1v1 You vs AI' : ''})
               </span>
               <span className="text-[11px] text-slate-400">Edit names, owners, or individual ₹ Crore budgets</span>
             </div>

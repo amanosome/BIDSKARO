@@ -323,7 +323,7 @@ function createRoomState(options: {
     baseRules.hostCanBid = true;
   }
 
-  const teamPresets = options.customTeams?.length
+  const rawTeamPresets = options.customTeams?.length
     ? options.customTeams
     : options.isDemo
       ? DEMO_FIVE_TEAMS.map((t) => ({
@@ -344,6 +344,14 @@ function createRoomState(options: {
           ownerName: t.defaultOwner,
           initialPurse: baseRules.defaultTeamPurse,
         }));
+
+  const teamPresets =
+    resolvedPlayMode === 'ai' && !options.isDemo
+      ? rawTeamPresets.slice(0, 2).map((t, idx) => ({
+          ...t,
+          ownerName: idx === 0 ? options.hostName || t.ownerName : 'AI Opponent',
+        }))
+      : rawTeamPresets;
 
   const teams: Team[] = teamPresets.map((t, idx) => {
     const purse = Math.min(t.initialPurse ?? baseRules.defaultTeamPurse, baseRules.maxTeamPurse);

@@ -987,7 +987,7 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Right 5 Cols: Player Catalog, Teams Management & Audit Log */}
+              {/* Right 5 Cols: Player Catalog & Teams Management */}
               <div className="lg:col-span-5 space-y-5">
                 {/* Player Catalog (Hidden Until Auction Starts) */}
                 <div className="rounded-2xl border border-slate-800 bg-[#0D1526] p-5 space-y-3">

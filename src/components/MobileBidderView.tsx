@@ -120,13 +120,16 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
   const [portraitLoadFailed, setPortraitLoadFailed] = useState<boolean>(false);
 
   const canActAsHost = isHost || Boolean(room.rules.allBiddersCanHost);
+  const isAiDuelMode = room.rules.playMode === 'ai' && room.rules.aiOpponentsEnabled;
   const isLobbyLocked = room.status === 'lobby';
 
   useEffect(() => {
     if (assignedTeamId) {
       setActiveTeamId(assignedTeamId);
+    } else if (isAiDuelMode && room.teams[0]?.id) {
+      setActiveTeamId(room.teams[0].id);
     }
-  }, [assignedTeamId]);
+  }, [assignedTeamId, isAiDuelMode, room.teams]);
 
   useEffect(() => {
     const updateClock = () => {
@@ -396,7 +399,7 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
                 {room.rules.aiOpponentsEnabled && (
                   <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400 whitespace-nowrap">
                     <Cpu className="w-3.5 h-3.5" />
-                    <span>AI Opponents Active</span>
+                    <span>{isAiDuelMode ? '1v1 vs AI Opponent' : 'AI Opponents Active'}</span>
                   </span>
                 )}
                 {room.status === 'live' && room.auctionEndDeadlineMs > 0 && (
@@ -453,7 +456,7 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
               </>
             )}
 
-            {(canActAsHost || !assignedTeamId) && (
+            {(canActAsHost || !assignedTeamId) && !isAiDuelMode && (
               <div className="flex items-center gap-2">
                 <label htmlFor="active-team-select" className="text-xs text-slate-400 whitespace-nowrap">
                   Bidding Team:
@@ -946,9 +949,9 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
 
               {/* 2x2 Colored Franchise Purse Grid */}
               <div className="grid grid-cols-2 gap-2.5 max-h-[205px] overflow-y-auto pr-0.5">
-                {room.teams.map((t) => {
+                {room.teams.map((t, teamIdx) => {
                   const isSelected = t.id === selectedTeam?.id;
-                  const canSwitch = canActAsHost || !assignedTeamId;
+                  const canSwitch = !isAiDuelMode && (canActAsHost || !assignedTeamId);
                   return (
                     <button
                       key={t.id}
@@ -980,7 +983,7 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
                           size="sm"
                         />
                         <span className="text-xs font-semibold text-slate-200 truncate">
-                          {t.shortCode} {isSelected ? '· You' : ''}
+                          {t.shortCode} {isSelected ? '· You' : isAiDuelMode && teamIdx === 1 ? '· AI' : ''}
                         </span>
                       </div>
                       <div className="mt-2 text-base font-mono-tabular font-extrabold text-amber-300 truncate">

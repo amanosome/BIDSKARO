@@ -119,7 +119,7 @@ export const AuctionRulesPanel: React.FC<AuctionRulesPanelProps> = ({
           {draft.rulesLocked ? (
             <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-300">
               <Lock className="w-3.5 h-3.5" />
-              Rules Locked ({draft.hostCanEditRulesLive ? 'Live Host Overrides Audited' : 'Read Only'})
+              Rules Locked ({draft.hostCanEditRulesLive ? 'Host Editable Live' : 'Read Only'})
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400">
@@ -669,7 +669,7 @@ export const AuctionRulesPanel: React.FC<AuctionRulesPanelProps> = ({
                   className="w-full rounded-lg border border-slate-700 bg-[#060B18] px-3 py-2 text-xs text-white"
                 >
                   <option value="friends">Play with Friends (Invite Code)</option>
-                  <option value="ai">Play with AI Opponents</option>
+                  <option value="ai">Play with AI (2 Teams: You vs AI)</option>
                 </select>
               </div>
               <div>
@@ -821,11 +821,8 @@ export const AuctionRulesPanel: React.FC<AuctionRulesPanelProps> = ({
                   }}
                   className="w-full rounded-lg bg-emerald-500 py-3 px-4 text-sm font-bold text-slate-950 hover:bg-emerald-400 transition-colors shadow-lg shadow-emerald-500/15"
                 >
-                  {room.status === 'lobby' ? 'CONFIRM AND START AUCTION' : 'SAVE & RETURN TO LIVE CONSOLE'}
+                  {room.status === 'lobby' ? 'CONFIRM AND START AUCTION' : 'SAVE & RETURN TO LIVE AUCTION'}
                 </button>
-                <p className="text-[11px] text-slate-400 text-center">
-                  All rule modifications during a live auction are recorded in the room audit log.
-                </p>
               </div>
             )}
           </div>

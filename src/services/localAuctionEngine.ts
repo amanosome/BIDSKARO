@@ -1202,7 +1202,7 @@ export function createLocalRoom(body: {
     maxAuctionDurationMinutes: body.rules?.maxAuctionDurationMinutes ?? 20,
   };
 
-  const teamPresets = body.teams?.length
+  const rawTeamPresets = body.teams?.length
     ? body.teams
     : league.franchises.slice(0, leagueId === 'IPL' ? 10 : 5).map((t) => ({
         id: t.id,
@@ -1213,6 +1213,14 @@ export function createLocalRoom(body: {
         ownerName: t.defaultOwner,
         initialPurse: baseRules.defaultTeamPurse,
       }));
+
+  const teamPresets =
+    resolvedPlayMode === 'ai'
+      ? rawTeamPresets.slice(0, 2).map((t, idx) => ({
+          ...t,
+          ownerName: idx === 0 ? body.hostName || t.ownerName : 'AI Opponent',
+        }))
+      : rawTeamPresets;
 
   const teams: Team[] = teamPresets.map((t, idx) => {
     const purse = Math.min(t.initialPurse ?? baseRules.defaultTeamPurse, baseRules.maxTeamPurse);
