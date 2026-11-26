@@ -5,6 +5,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { AuctionRoomState } from '../shared/auctionTypes';
 import { formatCurrency, formatShortCurrency } from '../shared/currency';
 import { BidsKaroLogo, TeamCrest } from './BidsKaroLogo';
+import batterPortraitImg from '../assets/images/player_batter_portrait_1795655419380.jpg';
 
 interface BigScreenViewProps {
   room: AuctionRoomState;
@@ -205,7 +206,7 @@ export const BigScreenView: React.FC<BigScreenViewProps> = ({
         <div className="lg:col-span-5 rounded-2xl border border-slate-800 bg-[#0B1325] overflow-hidden flex flex-col">
           <div className="relative h-64 sm:h-72 bg-[#060B18] overflow-hidden">
             <img
-              src="/src/assets/images/player_batter_portrait_1795655419380.jpg"
+              src={batterPortraitImg}
               alt={player ? player.name : 'Cricket Auction Player'}
               referrerPolicy="no-referrer"
               className={`w-full h-full object-cover object-top ${isLobbyLocked ? 'opacity-25 blur-sm' : 'opacity-80'}`}

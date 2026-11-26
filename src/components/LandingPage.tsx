@@ -16,6 +16,8 @@ import { LEAGUES } from '../data/leagues';
 import { BidsKaroLogo, TeamCrest } from './BidsKaroLogo';
 import { PWAInstallButton } from './PWAInstallButton';
 import { AuctionResultsView } from './AuctionResultsView';
+import heroStadiumImg from '../assets/images/hero_stadium_auction_1795655418949.jpg';
+import gavelSpotlightImg from '../assets/images/auction_gavel_spotlight_1795655417958.jpg';
 
 interface LandingPageProps {
   authUser: AuthUserPublic | null;
@@ -153,7 +155,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       <section id="top" className="relative overflow-hidden border-b border-slate-800/80">
         <div className="absolute inset-0">
           <img
-            src="/src/assets/images/hero_stadium_auction_1795655418949.jpg"
+            src={heroStadiumImg}
             alt="BidsKaro Floodlit Cricket Auction Arena"
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover opacity-30"
@@ -219,7 +221,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           <div className="lg:col-span-5 rounded-2xl border border-slate-800 bg-[#0D1526]/90 backdrop-blur-md overflow-hidden flex flex-col justify-between">
             <div className="relative h-44 bg-[#060B18]">
               <img
-                src="/src/assets/images/auction_gavel_spotlight_1795655417958.jpg"
+                src={gavelSpotlightImg}
                 alt="BidsKaro Auctioneer Gavel"
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover opacity-85"
