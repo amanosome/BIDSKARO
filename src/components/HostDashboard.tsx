@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ArrowLeft,
   CheckCircle2,
   Clock,
   Cpu,
@@ -168,6 +169,12 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
     [room.players, room.currentPlayerId, isLobbyLocked]
   );
 
+  const currentLotNumber = useMemo(() => {
+    if (!currentPlayer) return 0;
+    const idx = room.players.findIndex((p) => p.id === currentPlayer.id);
+    return idx >= 0 ? idx + 1 : 0;
+  }, [room.players, currentPlayer]);
+
   const highestTeam = useMemo(
     () => room.teams.find((t) => t.id === room.highestBidderTeamId) || null,
     [room.teams, room.highestBidderTeamId]
@@ -282,28 +289,82 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
     );
   }
 
+  const isLightAuction = activeTab === 'bidder';
+
   return (
-    <div className="min-h-screen bg-[#060B18] text-slate-100 flex flex-col">
+    <div
+      className={`min-h-screen flex flex-col transition-colors ${
+        isLightAuction ? 'bg-[#F3F5F8] text-slate-900' : 'bg-[#060B18] text-slate-100'
+      }`}
+    >
       {/* Clean 3-Zone Workspace Top Bar */}
-      <header className="sticky top-0 z-40 border-b border-slate-800/90 bg-[#060B18]/95 backdrop-blur-md">
+      <header
+        className={`sticky top-0 z-40 border-b backdrop-blur-md ${
+          isLightAuction
+            ? 'border-slate-200 bg-white/95 text-slate-900'
+            : 'border-slate-800/90 bg-[#060B18]/95 text-slate-100'
+        }`}
+      >
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4 min-w-0">
-            <button
-              type="button"
-              onClick={onLeaveRoom}
-              className="hover:opacity-90 transition-opacity"
-              title="Back to BidsKaro Home"
-            >
-              <BidsKaroLogo size="sm" />
-            </button>
-            <div className="hidden lg:block text-xs text-slate-400 truncate">
-              <span className="font-semibold text-white">{room.roomName}</span>
-              <span className="mx-2 text-slate-600">·</span>
-              <span className="font-mono-tabular text-emerald-400">CODE: {room.roomCode}</span>
-              <span className="mx-2 text-slate-600">·</span>
-              <span>{connected ? 'Live Sync' : 'Connecting...'}</span>
+          {isLightAuction ? (
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={() =>
+                  setConfirmModal({
+                    title: 'Leave Auction Room?',
+                    message: 'Are you sure you want to leave this auction room? Your seat can be resumed or handled by AI.',
+                    actionLabel: 'Leave Room',
+                    variant: 'red',
+                    onConfirm: onLeaveRoom,
+                  })
+                }
+                className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-700 hover:bg-slate-100 transition-colors shrink-0"
+                title="Back to BidsKaro Home"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+              <div className="w-8 h-8 rounded-lg bg-[#0B0F19] text-white flex items-center justify-center font-display font-extrabold text-xs tracking-tight shrink-0">
+                BK
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm sm:text-base font-display font-extrabold text-slate-950 truncate">
+                    {room.leagueId === 'CUSTOM' ? room.roomName : `${room.leagueId} ${room.seasonYear}`}
+                  </span>
+                  <span
+                    className={`w-2 h-2 rounded-full shrink-0 ${
+                      connected ? 'bg-pink-500' : 'bg-amber-400'
+                    }`}
+                    title={connected ? 'Live Sync' : 'Connecting'}
+                  />
+                </div>
+                <div className="text-[11px] font-mono-tabular text-slate-500 truncate">
+                  {isLobbyLocked
+                    ? `Pre-Auction Lobby · ${room.players.length} Players`
+                    : `Player ${currentLotNumber || 1} of ${room.players.length}`}
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex items-center gap-4 min-w-0">
+              <button
+                type="button"
+                onClick={onLeaveRoom}
+                className="hover:opacity-90 transition-opacity"
+                title="Back to BidsKaro Home"
+              >
+                <BidsKaroLogo size="sm" />
+              </button>
+              <div className="hidden lg:block text-xs text-slate-400 truncate">
+                <span className="font-semibold text-white">{room.roomName}</span>
+                <span className="mx-2 text-slate-600">·</span>
+                <span className="font-mono-tabular text-emerald-400">CODE: {room.roomCode}</span>
+                <span className="mx-2 text-slate-600">·</span>
+                <span>{connected ? 'Live Sync' : 'Connecting...'}</span>
+              </div>
+            </div>
+          )}
 
           {/* Workspace View Tabs */}
           <nav className="flex items-center gap-1 overflow-x-auto">
@@ -314,7 +375,9 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
                 className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
                   activeTab === 'host'
                     ? 'bg-emerald-500 text-slate-950'
-                    : 'text-slate-300 hover:bg-slate-800/70'
+                    : isLightAuction
+                      ? 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+                      : 'text-slate-300 hover:bg-slate-800/70'
                 }`}
               >
                 <Gavel className="w-3.5 h-3.5" />
@@ -326,8 +389,10 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
               onClick={() => setActiveTab('bidder')}
               className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
                 activeTab === 'bidder'
-                  ? 'bg-emerald-500 text-slate-950'
-                  : 'text-slate-300 hover:bg-slate-800/70'
+                  ? 'bg-[#0B0F19] text-white'
+                  : isLightAuction
+                    ? 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+                    : 'text-slate-300 hover:bg-slate-800/70'
               }`}
             >
               <Smartphone className="w-3.5 h-3.5" />
@@ -336,7 +401,11 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('tv')}
-              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-amber-300 hover:bg-amber-500/10 whitespace-nowrap shrink-0 transition-colors"
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
+                isLightAuction
+                  ? 'text-slate-700 hover:bg-slate-100'
+                  : 'text-amber-300 hover:bg-amber-500/10'
+              }`}
             >
               <Monitor className="w-3.5 h-3.5" />
               <span>Big Screen TV</span>
@@ -347,7 +416,9 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
               className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
                 activeTab === 'rules'
                   ? 'bg-emerald-500 text-slate-950'
-                  : 'text-slate-300 hover:bg-slate-800/70'
+                  : isLightAuction
+                    ? 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+                    : 'text-slate-300 hover:bg-slate-800/70'
               }`}
             >
               <Settings className="w-3.5 h-3.5" />
@@ -359,7 +430,9 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
               className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
                 activeTab === 'fantasy'
                   ? 'bg-emerald-500 text-slate-950'
-                  : 'text-slate-300 hover:bg-slate-800/70'
+                  : isLightAuction
+                    ? 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+                    : 'text-slate-300 hover:bg-slate-800/70'
               }`}
             >
               <Star className="w-3.5 h-3.5" />
@@ -372,7 +445,9 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
               className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
                 activeTab === 'results'
                   ? 'bg-emerald-500 text-slate-950'
-                  : 'text-slate-300 hover:bg-slate-800/70'
+                  : isLightAuction
+                    ? 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+                    : 'text-slate-300 hover:bg-slate-800/70'
               }`}
             >
               <Trophy className="w-3.5 h-3.5" />
@@ -388,7 +463,11 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
             <button
               type="button"
               onClick={() => setShowQR(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 whitespace-nowrap shrink-0"
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold whitespace-nowrap shrink-0 ${
+                isLightAuction
+                  ? 'border-slate-300 bg-slate-50 text-slate-900 hover:bg-slate-100'
+                  : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+              }`}
             >
               <QrCode className="w-4 h-4 shrink-0" />
               <span className="font-mono-tabular">Invite: {room.roomCode}</span>
@@ -404,7 +483,11 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
                   onConfirm: onLeaveRoom,
                 })
               }
-              className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-300 hover:bg-red-500/20 whitespace-nowrap shrink-0"
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold whitespace-nowrap shrink-0 ${
+                isLightAuction
+                  ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100'
+                  : 'border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20'
+              }`}
             >
               <span>Leave Room</span>
             </button>
@@ -413,7 +496,7 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 py-6">
+      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 py-5">
         {activeTab === 'rules' && (
           <AuctionRulesPanel
             room={room}

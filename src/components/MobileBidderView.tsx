@@ -1,25 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
-  Award,
   Check,
   CheckCircle2,
   Clock,
   Copy,
-  Cpu,
-  Gavel,
+  Crown,
   Layers,
   Lock,
   Monitor,
   Pause,
+  Pencil,
   Play,
   QrCode,
   RotateCcw,
   Star,
-  Trophy,
-  Zap,
 } from 'lucide-react';
-import { AuctionPlayer, AuctionRoomState, PlayerRole } from '../shared/auctionTypes';
+import { AuctionPlayer, AuctionRoomState, PlayerRole, Team } from '../shared/auctionTypes';
 import {
   CRORE,
   formatCurrency,
@@ -35,7 +32,6 @@ import {
   validateBidSubmission,
 } from '../shared/rulesEngine';
 import { TeamCrest } from './BidsKaroLogo';
-import playerShowcaseImg from '../assets/images/cricket_player_showcase_1795725551044.jpg';
 
 interface MobileBidderViewProps {
   room: AuctionRoomState;
@@ -66,21 +62,20 @@ const QUICK_RAISE_PRESETS: Array<{
   key: Exclude<RaisePresetKey, 'default' | 'custom'>;
   label: string;
   value: number;
-  highlightClass?: string;
 }> = [
   { key: '10l', label: '10L', value: 10 * LAKH },
   { key: '20l', label: '20L', value: 20 * LAKH },
   { key: '50l', label: '50L', value: 50 * LAKH },
   { key: '1cr', label: '1 CR', value: 1 * CRORE },
   { key: '5cr', label: '5 CR', value: 5 * CRORE },
-  { key: '10cr', label: '10 CR', value: 10 * CRORE, highlightClass: 'border-fuchsia-500/70 bg-fuchsia-950/50 text-white' },
+  { key: '10cr', label: '10 CR', value: 10 * CRORE },
 ];
 
 function formatClockMMSS(totalSeconds: number): string {
   const safe = Math.max(0, Math.floor(totalSeconds));
   const mins = Math.floor(safe / 60);
   const secs = safe % 60;
-  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  return `${mins}:${String(secs).padStart(2, '0')}`;
 }
 
 function mapRoleToBucket(role: PlayerRole): 'batters' | 'bowlers' | 'allRounders' | 'wicketkeepers' {
@@ -121,10 +116,12 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
   const [customInput, setCustomInput] = useState<string>('');
   const [selectedPreset, setSelectedPreset] = useState<RaisePresetKey>('default');
   const [localError, setLocalError] = useState<string | null>(null);
-  const [mobileTab, setMobileTab] = useState<'bid' | 'player' | 'summary' | 'stack'>('bid');
   const [auctionClockSeconds, setAuctionClockSeconds] = useState<number>(0);
-  const [portraitLoadFailed, setPortraitLoadFailed] = useState<boolean>(false);
   const [copiedKey, setCopiedKey] = useState<'room' | 'tv' | null>(null);
+
+  const canActAsHost = isHost || Boolean(room.rules.allBiddersCanHost);
+  const isAiDuelMode = room.rules.playMode === 'ai' && room.rules.aiOpponentsEnabled;
+  const isLobbyLocked = room.status === 'lobby';
 
   const handleCopyCode = async (value: string, key: 'room' | 'tv') => {
     try {
@@ -135,10 +132,6 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
       // ignore clipboard errors
     }
   };
-
-  const canActAsHost = isHost || Boolean(room.rules.allBiddersCanHost);
-  const isAiDuelMode = room.rules.playMode === 'ai' && room.rules.aiOpponentsEnabled;
-  const isLobbyLocked = room.status === 'lobby';
 
   useEffect(() => {
     if (assignedTeamId) {
@@ -166,12 +159,6 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
     [room.players, room.currentPlayerId, isLobbyLocked]
   );
 
-  const currentLotNumber = useMemo(() => {
-    if (!currentPlayer) return 0;
-    const idx = room.players.findIndex((p) => p.id === currentPlayer.id);
-    return idx >= 0 ? idx + 1 : 0;
-  }, [room.players, currentPlayer]);
-
   const selectedTeam = useMemo(
     () => room.teams.find((t) => t.id === activeTeamId) || room.teams[0],
     [room.teams, activeTeamId]
@@ -191,22 +178,8 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
       .filter((p): p is AuctionPlayer => Boolean(p));
   }, [selectedTeam, playersMap]);
 
-  const roleCounts = useMemo(() => {
-    const counts = { batters: 0, bowlers: 0, allRounders: 0, wicketkeepers: 0 };
-    for (const p of selectedSquadPlayers) {
-      counts[mapRoleToBucket(p.role)] += 1;
-    }
-    return counts;
-  }, [selectedSquadPlayers]);
-
   const xiLimit = Math.min(room.rules.playingXISize || 11, room.rules.minSquadSize || 11, 11);
   const extrasLimit = Math.max(0, room.rules.maxSquadSize - xiLimit);
-  const acquiredExtras = Math.max(0, selectedSquadPlayers.length - xiLimit);
-
-  const soldCount = useMemo(
-    () => room.players.filter((p) => p.status === 'sold').length,
-    [room.players]
-  );
 
   const hasHighestBidder = Boolean(room.highestBidderTeamId && room.currentBid > 0);
   const nextValidBid = currentPlayer
@@ -223,7 +196,14 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
     ? getMinIncrementForBid(room.currentBid, room.rules, currentPlayer.category)
     : 10 * LAKH;
 
-  // Reset staged amount to room's default next minimum bid whenever lot or winning bid changes
+  // Step-up quick bid amount for the vibrant blue button (mirrors "Bid 1 Cr" / "Bid 2 Cr")
+  const stepUpIncrement = currentIncrement >= 1 * CRORE ? currentIncrement : Math.max(currentIncrement, 1 * CRORE);
+  const stepUpBid = currentPlayer
+    ? hasHighestBidder
+      ? nextValidBid + currentIncrement
+      : currentPlayer.basePrice + stepUpIncrement
+    : 0;
+
   useEffect(() => {
     if (nextValidBid > 0) {
       setCustomInput(formatIndianCommas(nextValidBid));
@@ -237,19 +217,12 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
     : { slotsStillRequired: 0, reservedAmount: 0, maxAllowedBid: 0, overseasCount: 0 };
 
   const highestTeam = room.teams.find((t) => t.id === room.highestBidderTeamId) || null;
-  const secondarySummaryTeam =
-    room.teams.find((t) => t.id !== (highestTeam?.id || selectedTeam?.id)) || selectedTeam || room.teams[0];
 
-  const timerAccent =
-    room.lotStatus !== 'bidding'
-      ? 'border-slate-700 bg-slate-900/70 text-slate-400'
-      : remainingSeconds <= 3
-        ? 'border-red-500/60 bg-red-950/60 text-red-400'
-        : remainingSeconds <= 5
-          ? 'border-orange-500/60 bg-orange-950/50 text-orange-400'
-          : remainingSeconds <= 10
-            ? 'border-amber-500/50 bg-amber-950/40 text-amber-300'
-            : 'border-emerald-500/50 bg-emerald-950/40 text-emerald-400';
+  const timerProgressPct = useMemo(() => {
+    const maxSec = Math.max(room.rules.resetTimerSeconds || 10, room.rules.initialTimerSeconds || 10, 1);
+    if (room.lotStatus !== 'bidding' && room.lotStatus !== 'paused') return 0;
+    return Math.min(100, Math.max(0, (remainingSeconds / maxSec) * 100));
+  }, [remainingSeconds, room.lotStatus, room.rules.initialTimerSeconds, room.rules.resetTimerSeconds]);
 
   const handleSelectDefaultPreset = () => {
     if (!currentPlayer || nextValidBid <= 0) return;
@@ -374,243 +347,263 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
   const wishlistIds = selectedTeam ? room.wishlistByTeam?.[selectedTeam.id] || [] : [];
   const isCurrentWishlisted = currentPlayer ? wishlistIds.includes(currentPlayer.id) : false;
 
-  // Stat labels tailored cleanly to Cricket vs Football
-  const statOneVal = currentPlayer ? `${currentPlayer.stats.matches}` : '--';
-  const statOneLabel = 'Matches Played';
-  const statTwoVal = currentPlayer ? `${currentPlayer.stats.runs}` : '--';
-  const statTwoLabel = currentPlayer?.sport === 'football' ? 'Total Goals' : 'Total Runs';
-  const isPrimaryBowler =
-    currentPlayer?.role === 'Bowler' || currentPlayer?.role === 'Defender' || currentPlayer?.role === 'Goalkeeper';
-  const statThreeVal = currentPlayer
-    ? isPrimaryBowler
-      ? `${currentPlayer.stats.wickets}`
-      : `${currentPlayer.stats.average}`
-    : '--';
-  const statThreeLabel =
-    currentPlayer?.sport === 'football'
-      ? isPrimaryBowler
-        ? 'Clean Sheets'
-        : 'Assists Index'
-      : isPrimaryBowler
-        ? 'Total Wickets'
-        : 'Batting Average';
+  const playersNeededCount = Math.max(0, room.rules.minSquadSize - (selectedTeam?.squad.length || 0));
 
-  return (
-    <div className="max-w-[1380px] mx-auto space-y-5 pb-16 md:pb-8">
-      {/* Compact Active Team & Purse Bar */}
-      <div className="rounded-2xl border border-slate-800 bg-[#0B1221] px-4 py-3.5 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            {selectedTeam && (
-              <TeamCrest
-                shortCode={selectedTeam.shortCode}
-                primaryColor={selectedTeam.primaryColor}
-                secondaryColor={selectedTeam.secondaryColor}
-              />
-            )}
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-display font-bold text-white truncate">
-                  {selectedTeam?.name || 'Select Team'}
-                </span>
-                {room.rules.aiOpponentsEnabled && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400 whitespace-nowrap">
-                    <Cpu className="w-3.5 h-3.5" />
-                    <span>{isAiDuelMode ? '1v1 vs AI Opponent' : 'AI Opponents Active'}</span>
-                  </span>
-                )}
-                {room.status === 'live' && room.auctionEndDeadlineMs > 0 && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-mono-tabular font-medium text-amber-300 whitespace-nowrap">
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>{formatClockMMSS(auctionClockSeconds)}</span>
-                  </span>
-                )}
-              </div>
-              <div className="text-xs text-slate-400 font-mono-tabular mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                <span>
-                  Purse{' '}
-                  <strong className="text-emerald-400">
-                    {formatCurrency(selectedTeam?.remainingPurse || 0, room.rules.currency)}
-                  </strong>
-                </span>
-                <span className="text-slate-600" aria-hidden="true">·</span>
-                <span>
-                  Squad {selectedTeam?.squad.length || 0}/{room.rules.maxSquadSize} (Min {room.rules.minSquadSize})
-                </span>
-                <span className="text-slate-600" aria-hidden="true">·</span>
-                <span>
-                  Max Bid{' '}
-                  <strong className="text-amber-300">
-                    {formatShortCurrency(reserveInfo.maxAllowedBid, room.rules.currency)}
-                  </strong>
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Limited Host Live Controls: Pause / Resume + Room Invite Code + TV Screen Invite Code */}
-            {canActAsHost && room.status === 'live' && onSendCommand && (
-              <>
-                {room.lotStatus === 'bidding' ? (
-                  <button
-                    type="button"
-                    onClick={() => onSendCommand('pause_timer')}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 min-h-[40px] whitespace-nowrap shrink-0"
-                  >
-                    <Pause className="w-3.5 h-3.5" />
-                    <span>Pause</span>
-                  </button>
-                ) : room.lotStatus === 'paused' ? (
-                  <button
-                    type="button"
-                    onClick={() => onSendCommand('resume_timer')}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-400 min-h-[40px] whitespace-nowrap shrink-0"
-                  >
-                    <Play className="w-3.5 h-3.5" />
-                    <span>Resume</span>
-                  </button>
-                ) : null}
-              </>
-            )}
-
-            {/* Always-Visible Room Invite Code & TV Big Screen Code */}
-            <button
-              type="button"
-              onClick={() => handleCopyCode(room.roomCode, 'room')}
-              title="Copy Room Invite Code"
-              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/35 bg-emerald-500/10 px-3 py-2 text-xs font-mono-tabular font-bold text-emerald-300 hover:bg-emerald-500/20 min-h-[40px] whitespace-nowrap shrink-0"
-            >
-              {copiedKey === 'room' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>Invite: {room.roomCode}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                if (onOpenInvite) {
-                  onOpenInvite();
-                } else {
-                  const baseUrl =
-                    typeof window !== 'undefined'
-                      ? `${window.location.origin}${window.location.pathname}`
-                      : '';
-                  handleCopyCode(`${baseUrl}?room=${encodeURIComponent(room.roomCode)}&view=tv`, 'tv');
-                }
-              }}
-              title="View or Copy Big Screen TV Invite Code"
-              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs font-mono-tabular font-bold text-amber-300 hover:bg-amber-500/20 min-h-[40px] whitespace-nowrap shrink-0"
-            >
-              <Monitor className="w-3.5 h-3.5" />
-              <span>{copiedKey === 'tv' ? 'TV Link Copied' : `TV Code: ${room.roomCode}`}</span>
-            </button>
-
-            {onOpenTV && (
-              <button
-                type="button"
-                onClick={onOpenTV}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-[#060B18] px-3 py-2 text-xs font-semibold text-slate-200 hover:border-amber-400/50 min-h-[40px] whitespace-nowrap shrink-0"
+  const renderTeamSlotGroup = (
+    label: string,
+    playersInBucket: AuctionPlayer[],
+    quotaTarget: number
+  ) => {
+    const slotCount = Math.max(quotaTarget, playersInBucket.length, 1);
+    const rows = Array.from({ length: slotCount }, (_, idx) => playersInBucket[idx] || null);
+    return (
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-[10px] font-semibold tracking-wider uppercase text-slate-400">
+          <span>{label}</span>
+          <span className="font-mono-tabular text-slate-500">
+            {playersInBucket.length}/{quotaTarget}
+          </span>
+        </div>
+        <div className="space-y-1.5">
+          {rows.map((slotPlayer, idx) =>
+            slotPlayer ? (
+              <div
+                key={slotPlayer.id}
+                className="rounded-lg border border-slate-200 bg-[#F8FAFC] px-2.5 py-2 flex items-center justify-between gap-2 text-xs"
               >
-                <QrCode className="w-3.5 h-3.5 text-amber-300" />
-                <span>Open TV</span>
-              </button>
-            )}
-
-            {(canActAsHost || !assignedTeamId) && !isAiDuelMode && (
-              <div className="flex items-center gap-2">
-                <label htmlFor="active-team-select" className="text-xs text-slate-400 whitespace-nowrap">
-                  Bidding Team:
-                </label>
-                <select
-                  id="active-team-select"
-                  value={activeTeamId}
-                  onChange={(e) => {
-                    setActiveTeamId(e.target.value);
-                    onSelectTeam?.(e.target.value);
-                    setLocalError(null);
-                  }}
-                  className="rounded-xl border border-slate-700 bg-[#060B18] px-3 py-2 text-xs font-medium text-white min-h-[40px]"
-                >
-                  {room.teams.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({formatShortCurrency(t.remainingPurse, room.rules.currency)})
-                    </option>
-                  ))}
-                </select>
+                <div className="min-w-0">
+                  <div className="font-semibold text-slate-900 truncate">{slotPlayer.name}</div>
+                  <div className="text-[10px] font-mono-tabular text-slate-500">
+                    M:{slotPlayer.stats.matches} · {slotPlayer.sport === 'football' ? 'G' : 'R'}:{slotPlayer.stats.runs} · SR:{slotPlayer.stats.strikeRate}
+                  </div>
+                </div>
+                <span className="font-mono-tabular font-bold text-[#2D62FF] shrink-0">
+                  {formatShortCurrency(slotPlayer.soldPrice || slotPlayer.basePrice, room.rules.currency)}
+                </span>
               </div>
+            ) : (
+              <div
+                key={`${label}-open-${idx}`}
+                className="rounded-lg border border-dashed border-slate-200 bg-[#FAFBFD] px-3 py-2 text-center text-[11px] font-medium text-slate-400"
+              >
+                Open
+              </div>
+            )
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderTeamCard = (team: Team, teamIdx: number) => {
+    const isSelected = team.id === selectedTeam?.id;
+    const isLeading = team.id === room.highestBidderTeamId;
+    const canSwitch = !isAiDuelMode && (canActAsHost || !assignedTeamId);
+    const teamPlayers = team.squad
+      .map((id) => playersMap.get(id))
+      .filter((p): p is AuctionPlayer => Boolean(p));
+
+    const batters = teamPlayers.filter((p) => mapRoleToBucket(p.role) === 'batters');
+    const bowlers = teamPlayers.filter((p) => mapRoleToBucket(p.role) === 'bowlers');
+    const keepers = teamPlayers.filter((p) => mapRoleToBucket(p.role) === 'wicketkeepers');
+    const allRounders = teamPlayers.filter((p) => mapRoleToBucket(p.role) === 'allRounders');
+
+    const teamReserve = calculateReservedPurse(team, room.rules, playersMap);
+    const quotas = room.rules.roleQuotas || { batters: 2, bowlers: 1, allRounders: 1, wicketkeepers: 1 };
+
+    return (
+      <div
+        key={team.id}
+        onClick={() => {
+          if (!canSwitch) return;
+          setActiveTeamId(team.id);
+          onSelectTeam?.(team.id);
+          setLocalError(null);
+        }}
+        className={`rounded-2xl bg-white p-4 transition-all ${
+          isSelected
+            ? 'border-2 border-[#2D62FF] shadow-sm'
+            : 'border border-slate-200 shadow-xs'
+        } ${canSwitch ? 'cursor-pointer hover:border-slate-300' : ''}`}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span
+              className={`text-sm font-display font-bold truncate ${
+                isSelected ? 'text-[#2D62FF]' : 'text-slate-900'
+              }`}
+            >
+              {team.name}
+            </span>
+            {isSelected && <Crown className="w-3.5 h-3.5 text-[#2D62FF] shrink-0" />}
+            {isAiDuelMode && teamIdx === 1 && (
+              <span className="text-[10px] font-mono-tabular font-semibold text-slate-400 shrink-0">
+                (AI)
+              </span>
             )}
           </div>
+          {isLeading && (
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 shrink-0">
+              Leading
+            </span>
+          )}
         </div>
 
-        {/* Clean Unboxed Role Targets Strip */}
-        {selectedTeam && room.rules.roleQuotas && (
-          <div className="pt-2.5 border-t border-slate-800/80 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono-tabular text-slate-300">
-            <span className="font-sans font-semibold text-slate-400">Role Targets:</span>
-            <span className={roleCounts.batters >= room.rules.roleQuotas.batters ? 'text-emerald-400 font-semibold' : ''}>
-              {isFootball ? 'FWD' : 'BAT'} {roleCounts.batters}/{room.rules.roleQuotas.batters}
-            </span>
-            <span className="text-slate-600" aria-hidden="true">·</span>
-            <span className={roleCounts.bowlers >= room.rules.roleQuotas.bowlers ? 'text-emerald-400 font-semibold' : ''}>
-              {isFootball ? 'DEF' : 'BWL'} {roleCounts.bowlers}/{room.rules.roleQuotas.bowlers}
-            </span>
-            <span className="text-slate-600" aria-hidden="true">·</span>
-            <span className={roleCounts.allRounders >= room.rules.roleQuotas.allRounders ? 'text-emerald-400 font-semibold' : ''}>
-              {isFootball ? 'MID' : 'AR'} {roleCounts.allRounders}/{room.rules.roleQuotas.allRounders}
-            </span>
-            <span className="text-slate-600" aria-hidden="true">·</span>
-            <span className={roleCounts.wicketkeepers >= room.rules.roleQuotas.wicketkeepers ? 'text-emerald-400 font-semibold' : ''}>
-              {isFootball ? 'GK' : 'WK'} {roleCounts.wicketkeepers}/{room.rules.roleQuotas.wicketkeepers}
-            </span>
-            <span className="text-slate-600" aria-hidden="true">·</span>
-            <span className="text-amber-300">
-              Extras {acquiredExtras}/{extrasLimit} · XI {selectedTeam.startingXI?.length || 0}/{xiLimit}
-            </span>
-          </div>
-        )}
-      </div>
+        <div className="mt-1 flex items-baseline gap-1 font-mono-tabular">
+          <span className="text-lg font-extrabold text-slate-950">
+            {formatShortCurrency(team.remainingPurse, room.rules.currency)}
+          </span>
+          <span className="text-xs font-medium text-slate-500">left</span>
+        </div>
 
-      {/* Responsive Mobile & Tablet Tab Switcher */}
-      <div className="grid grid-cols-4 lg:hidden items-center gap-1 p-1 rounded-2xl bg-[#0B1221] border border-slate-800">
-        {(
-          [
-            { id: 'bid', label: 'Live Bid' },
-            { id: 'player', label: 'Player Card' },
-            { id: 'summary', label: 'Summary' },
-            { id: 'stack', label: `Stack (${selectedSquadPlayers.length})` },
-          ] as const
-        ).map((tab) => (
+        <div className="text-[11px] font-mono-tabular text-slate-500 mt-0.5">
+          {team.squad.length}/{room.rules.maxSquadSize} players · max bid{' '}
+          {formatShortCurrency(teamReserve.maxAllowedBid, room.rules.currency)}
+        </div>
+
+        <div className="my-3 border-t border-slate-100" />
+
+        <div className="space-y-3">
+          {renderTeamSlotGroup(isFootball ? 'FORWARDS' : 'BATTERS', batters, quotas.batters)}
+          {renderTeamSlotGroup(isFootball ? 'DEFENDERS' : 'BOWLERS', bowlers, quotas.bowlers)}
+          {renderTeamSlotGroup(isFootball ? 'GOALKEEPER' : 'KEEPER', keepers, quotas.wicketkeepers)}
+          {renderTeamSlotGroup(isFootball ? 'MIDFIELDERS' : 'ALL-ROUNDERS', allRounders, quotas.allRounders)}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="max-w-[1320px] mx-auto space-y-4 pb-12 text-slate-900">
+      {/* Compact Light Control Strip: Pause/Resume (Host Limited Controls) + Invite & TV Codes */}
+      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 flex flex-wrap items-center justify-between gap-2.5 shadow-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+          <span className="font-display font-bold text-slate-900">
+            {selectedTeam?.name || 'Select Team'}
+          </span>
+          {room.status === 'live' && room.auctionEndDeadlineMs > 0 && (
+            <>
+              <span className="text-slate-300" aria-hidden="true">·</span>
+              <span className="inline-flex items-center gap-1 font-mono-tabular text-slate-600">
+                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                <span>{formatClockMMSS(auctionClockSeconds)}</span>
+              </span>
+            </>
+          )}
+          <span className="text-slate-300" aria-hidden="true">·</span>
+          <span className="font-mono-tabular text-slate-500">
+            {room.rules.aiOpponentsEnabled ? '1v1 vs AI' : `${room.teams.length} Teams`}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Limited Host Live Controls: Pause / Resume */}
+          {canActAsHost && room.status === 'live' && onSendCommand && (
+            <>
+              {room.lotStatus === 'bidding' ? (
+                <button
+                  type="button"
+                  onClick={() => onSendCommand('pause_timer')}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 min-h-[38px] whitespace-nowrap shrink-0"
+                >
+                  <Pause className="w-3.5 h-3.5" />
+                  <span>Pause</span>
+                </button>
+              ) : room.lotStatus === 'paused' ? (
+                <button
+                  type="button"
+                  onClick={() => onSendCommand('resume_timer')}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-[#2D62FF] px-3 py-2 text-xs font-bold text-white hover:bg-[#1E52E8] min-h-[38px] whitespace-nowrap shrink-0"
+                >
+                  <Play className="w-3.5 h-3.5" />
+                  <span>Resume</span>
+                </button>
+              ) : null}
+            </>
+          )}
+
+          {/* Always-Visible Room Invite Code & TV Big Screen Code */}
           <button
-            key={tab.id}
             type="button"
-            onClick={() => setMobileTab(tab.id)}
-            className={`py-2.5 px-2 rounded-xl text-[11px] font-semibold transition-colors min-h-[44px] whitespace-nowrap truncate ${
-              mobileTab === tab.id ? 'bg-amber-400 text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
-            }`}
+            onClick={() => handleCopyCode(room.roomCode, 'room')}
+            title="Copy Room Invite Code"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-[#F8FAFC] px-3 py-2 text-xs font-mono-tabular font-bold text-slate-800 hover:border-slate-300 min-h-[38px] whitespace-nowrap shrink-0"
           >
-            {tab.label}
+            {copiedKey === 'room' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-500" />}
+            <span>Invite: {room.roomCode}</span>
           </button>
-        ))}
+
+          <button
+            type="button"
+            onClick={() => {
+              if (onOpenInvite) {
+                onOpenInvite();
+              } else {
+                const baseUrl =
+                  typeof window !== 'undefined'
+                    ? `${window.location.origin}${window.location.pathname}`
+                    : '';
+                handleCopyCode(`${baseUrl}?room=${encodeURIComponent(room.roomCode)}&view=tv`, 'tv');
+              }
+            }}
+            title="View or Copy Big Screen TV Invite Code"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-[#F8FAFC] px-3 py-2 text-xs font-mono-tabular font-bold text-slate-800 hover:border-[#2D62FF] min-h-[38px] whitespace-nowrap shrink-0"
+          >
+            <Monitor className="w-3.5 h-3.5 text-[#2D62FF]" />
+            <span>{copiedKey === 'tv' ? 'TV Copied' : `TV Code: ${room.roomCode}`}</span>
+          </button>
+
+          {onOpenTV && (
+            <button
+              type="button"
+              onClick={onOpenTV}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 min-h-[38px] whitespace-nowrap shrink-0"
+            >
+              <QrCode className="w-3.5 h-3.5 text-slate-600" />
+              <span>Open TV</span>
+            </button>
+          )}
+
+          {(canActAsHost || !assignedTeamId) && !isAiDuelMode && (
+            <select
+              id="active-team-select"
+              value={activeTeamId}
+              onChange={(e) => {
+                setActiveTeamId(e.target.value);
+                onSelectTeam?.(e.target.value);
+                setLocalError(null);
+              }}
+              className="rounded-xl border border-slate-200 bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-slate-800 min-h-[38px]"
+            >
+              {room.teams.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} ({formatShortCurrency(t.remainingPurse, room.rules.currency)})
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
       </div>
 
       {isLobbyLocked ? (
-        <div className="rounded-3xl border border-slate-800 bg-[#0B1221] p-8 sm:p-10 text-center space-y-4">
-          <div className="mx-auto w-14 h-14 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+        <div className="rounded-2xl border border-slate-200 bg-white p-8 sm:p-12 text-center space-y-4 shadow-xs">
+          <div className="mx-auto w-14 h-14 rounded-2xl border border-slate-200 bg-[#F4F6FA] flex items-center justify-center text-[#2D62FF]">
             <Lock className="w-6 h-6" />
           </div>
-          <h2 className="text-xl sm:text-2xl font-display font-bold text-white">
+          <h2 className="text-xl sm:text-2xl font-display font-bold text-slate-950">
             Mystery Player Pool Locked ({room.players.length} Players)
           </h2>
-          <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto">
+          <p className="text-xs sm:text-sm text-slate-500 max-w-md mx-auto">
             Players stay hidden before the auction starts so every franchise enters blind.{' '}
             {canActAsHost
-              ? 'Start the auction now to reveal Lot #1 and enter the live bidding stage.'
-              : 'Waiting for the auction to start and reveal Lot #1.'}
+              ? 'Start the auction now to reveal Player #1 and open bidding.'
+              : 'Waiting for the auction to start.'}
           </p>
           {canActAsHost && onSendCommand && (
             <button
               type="button"
               onClick={() => onSendCommand('start_auction', { playerId: room.currentPlayerId })}
-              className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-6 py-3.5 text-sm font-display font-extrabold text-slate-950 hover:bg-amber-300 transition-colors min-h-[48px] whitespace-nowrap"
+              className="inline-flex items-center gap-2 rounded-xl bg-[#2D62FF] px-6 py-3.5 text-sm font-display font-bold text-white hover:bg-[#1E52E8] transition-colors min-h-[48px] whitespace-nowrap"
             >
               <Play className="w-4 h-4 fill-current" />
               <span>Start Auction &amp; Reveal Lot #1</span>
@@ -618,413 +611,247 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
           )}
         </div>
       ) : (
-        /* 3-Panel Broadcast Showcase Matching Reference UI across Desktop & Responsive Mobile Tabs */
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-          {/* PANEL 1 (LEFT): Player Showcase Portrait Card */}
-          <div className={`lg:col-span-4 ${mobileTab === 'player' ? 'block' : 'hidden lg:block'}`}>
-            <div className="relative h-full min-h-[540px] rounded-3xl overflow-hidden border border-slate-800 bg-[#0B1221] flex flex-col justify-between shadow-xl">
-              {/* Full-bleed Player Portrait + Dark Atmospheric Gradient Fallback */}
-              <div className="absolute inset-0 bg-gradient-to-br from-emerald-950 via-[#0B1221] to-[#060B18]">
-                {!portraitLoadFailed && (
-                  <img
-                    src={playerShowcaseImg}
-                    alt={currentPlayer ? `${currentPlayer.name} portrait` : 'Auction Player Portrait'}
-                    referrerPolicy="no-referrer"
-                    onError={() => setPortraitLoadFailed(true)}
-                    className="w-full h-full object-cover object-top"
-                  />
-                )}
-                <div className="absolute inset-0 bg-gradient-to-t from-[#050914] via-[#050914]/45 to-[#050914]/65" />
-              </div>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          {/* MAIN AUCTION FLOW (Matches Uploaded Reference Screenshot) */}
+          <div className="lg:col-span-8 space-y-4">
+            {/* 1. Metallic Silver Stage + Dark Floating Player Trading Card */}
+            <div className="relative rounded-2xl bg-gradient-to-br from-[#D1D7E0] via-[#E1E6EE] to-[#B7C1CE] p-5 sm:p-8 flex items-center justify-center overflow-hidden border border-slate-300/70 shadow-sm">
+              {/* Subtle Geometric Corner Shapes Matching Backdrop */}
+              <svg
+                className="absolute top-0 left-0 w-36 h-36 text-[#BCC6D3] opacity-65 pointer-events-none"
+                viewBox="0 0 120 120"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <polygon points="0,0 75,0 38,65 0,65" />
+                <polygon points="85,0 120,0 120,55 62,55" />
+              </svg>
+              <svg
+                className="absolute bottom-0 right-0 w-40 h-40 text-[#AAB5C4] opacity-55 pointer-events-none"
+                viewBox="0 0 120 120"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <polygon points="35,55 120,55 120,120 10,120" />
+              </svg>
 
-              {/* Top Overlay Header */}
-              <div className="relative z-10 flex items-center justify-between px-5 pt-5">
-                <div className="text-xs font-medium text-slate-200">
-                  <span className="font-semibold text-white">Player Auction</span>
-                  {currentPlayer && (
-                    <>
-                      <span className="mx-1.5 text-slate-400" aria-hidden="true">·</span>
-                      <span className="text-slate-300">{currentPlayer.category}</span>
-                    </>
-                  )}
-                </div>
-
-                {currentPlayer && selectedTeam && onSendCommand && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onSendCommand('toggle_wishlist', {
-                        teamId: selectedTeam.id,
-                        playerId: currentPlayer.id,
-                      })
-                    }
-                    className={`inline-flex items-center gap-1.5 rounded-full backdrop-blur-md px-3 py-1.5 text-xs font-semibold transition-colors min-h-[36px] whitespace-nowrap shrink-0 ${
-                      isCurrentWishlisted
-                        ? 'bg-amber-400 text-slate-950'
-                        : 'bg-white/15 border border-white/25 text-white hover:bg-white/25'
-                    }`}
-                  >
-                    <Star className={`w-3.5 h-3.5 ${isCurrentWishlisted ? 'fill-slate-950' : ''}`} />
-                    <span>{isCurrentWishlisted ? 'Saved' : 'Target'}</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Left Floating Stacked Metric Cards (Charcoal, Crisp White, Frosted Glass) */}
-              <div className="relative z-10 px-5 py-4 flex flex-col gap-3 w-44">
-                <div className="rounded-2xl bg-[#070B14]/90 border border-white/10 p-3.5 text-white shadow-lg">
-                  <div className="w-7 h-7 rounded-full bg-white text-slate-950 flex items-center justify-center mb-2">
-                    <Trophy className="w-3.5 h-3.5" />
-                  </div>
-                  <div className="text-xl font-mono-tabular font-extrabold leading-none">{statOneVal}</div>
-                  <div className="mt-1 text-[11px] text-slate-300">{statOneLabel}</div>
-                </div>
-
-                <div className="rounded-2xl bg-white text-slate-950 p-3.5 shadow-lg">
-                  <div className="w-7 h-7 rounded-full bg-slate-950 text-white flex items-center justify-center mb-2">
-                    <Zap className="w-3.5 h-3.5" />
-                  </div>
-                  <div className="text-xl font-mono-tabular font-extrabold leading-none">{statTwoVal}</div>
-                  <div className="mt-1 text-[11px] text-slate-600 font-medium">{statTwoLabel}</div>
-                </div>
-
-                <div className="rounded-2xl backdrop-blur-md bg-white/15 border border-white/25 p-3.5 text-white shadow-lg">
-                  <div className="w-7 h-7 rounded-full bg-white text-slate-950 flex items-center justify-center mb-2">
-                    <Star className="w-3.5 h-3.5" />
-                  </div>
-                  <div className="text-xl font-mono-tabular font-extrabold leading-none">{statThreeVal}</div>
-                  <div className="mt-1 text-[11px] text-slate-200">{statThreeLabel}</div>
-                </div>
-              </div>
-
-              {/* Bottom Player Identity + Complete Original Career Stats + Rating Card + CTA */}
-              <div className="relative z-10 px-5 pb-5 pt-2 space-y-3.5">
-                <div className="flex items-end justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <h2 className="text-2xl sm:text-3xl font-display font-extrabold text-white leading-tight break-words">
-                      {currentPlayer ? currentPlayer.name : 'Standby'}
-                    </h2>
+              {/* Dark Floating Collectible Player Card */}
+              <div className="relative z-10 w-full max-w-[370px] rounded-2xl bg-gradient-to-b from-[#171A23] via-[#11141C] to-[#0A0D13] text-white p-5 sm:p-6 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.55)] border border-white/10">
+                {/* Top Card Header: BASE + Role */}
+                <div className="flex items-center justify-between gap-2 text-[10px] font-semibold tracking-wider uppercase">
+                  <span className="text-slate-400">
+                    BASE{' '}
+                    <strong className="font-mono-tabular text-white ml-1">
+                      {currentPlayer ? formatShortCurrency(currentPlayer.basePrice, room.rules.currency) : '—'}
+                    </strong>
+                  </span>
+                  <div className="flex items-center gap-1.5">
                     {currentPlayer && (
-                      <p className="mt-1 text-xs text-slate-200 leading-relaxed">
-                        {currentPlayer.country} · {currentPlayer.role} · {currentPlayer.battingStyle}
-                        {currentPlayer.bowlingStyle ? ` · ${currentPlayer.bowlingStyle}` : ''} · Base{' '}
-                        <span className="font-mono-tabular text-amber-300 font-semibold">
-                          {formatShortCurrency(currentPlayer.basePrice, room.rules.currency)}
-                        </span>
-                      </p>
+                      <span className="rounded bg-white/10 border border-white/15 px-2 py-0.5 text-[10px] font-bold text-white">
+                        {currentPlayer.role.toUpperCase()}
+                      </span>
                     )}
-                  </div>
-
-                  {currentPlayer && (
-                    <div className="rounded-2xl bg-white text-slate-950 p-2.5 text-center shadow-xl shrink-0 min-w-[96px]">
-                      <div className="mx-auto w-7 h-7 rounded-full bg-emerald-500/15 text-emerald-700 flex items-center justify-center mb-1">
-                        <Award className="w-4 h-4" />
-                      </div>
-                      <div className="text-[10px] font-semibold text-slate-500">Auction MVP</div>
-                      <div className="text-xl font-mono-tabular font-extrabold leading-tight">
-                        {currentPlayer.rating}
-                      </div>
+                    {currentPlayer && selectedTeam && onSendCommand && (
                       <button
                         type="button"
-                        onClick={() => setMobileTab('summary')}
-                        className="mt-1 w-full rounded-full bg-[#3D154B] px-2.5 py-1 text-[10px] font-semibold text-white hover:bg-[#521D64] transition-colors whitespace-nowrap"
+                        onClick={() =>
+                          onSendCommand('toggle_wishlist', {
+                            teamId: selectedTeam.id,
+                            playerId: currentPlayer.id,
+                          })
+                        }
+                        title={isCurrentWishlisted ? 'Remove from Target Wishlist' : 'Save to Target Wishlist'}
+                        className="p-1 rounded hover:bg-white/10 transition-colors"
                       >
-                        Bid Feed
+                        <Star
+                          className={`w-3.5 h-3.5 ${
+                            isCurrentWishlisted ? 'fill-amber-400 text-amber-400' : 'text-slate-400'
+                          }`}
+                        />
                       </button>
-                    </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Big Bold Player Name & Bio Subtitle */}
+                <div className="mt-3">
+                  <h2 className="text-2xl sm:text-[28px] font-display font-extrabold text-white leading-[1.12] tracking-tight break-words">
+                    {currentPlayer ? currentPlayer.name : 'Standby'}
+                  </h2>
+                  {currentPlayer && (
+                    <p className="mt-1.5 text-xs text-slate-400 leading-snug">
+                      {currentPlayer.country} · {currentPlayer.battingStyle}
+                      {currentPlayer.historicalPeakPrice ? ` · Peak ${currentPlayer.historicalPeakPrice}` : ''}
+                    </p>
                   )}
                 </div>
 
-                {/* Full Original Career Stats Panel inside Player Showcase */}
+                {/* Primary 3 Career Stat Boxes (RUNS / STRIKE RATE / HIGH SCORE) */}
                 {currentPlayer && (
-                  <div className="rounded-2xl border border-white/15 bg-[#060B18]/90 backdrop-blur-md p-3 space-y-2">
-                    <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                      <span>Original Career Stats</span>
-                      {currentPlayer.historicalPeakPrice && (
-                        <span className="text-amber-300 font-mono-tabular truncate ml-2">
-                          Peak {currentPlayer.historicalPeakPrice}
-                        </span>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-3 gap-1.5 font-mono-tabular text-[11px]">
-                      <div className="rounded-lg bg-white/5 px-2 py-1.5">
-                        <div className="text-[9px] text-slate-400">MATCHES</div>
-                        <div className="font-bold text-white">{currentPlayer.stats.matches}</div>
-                      </div>
-                      <div className="rounded-lg bg-white/5 px-2 py-1.5">
-                        <div className="text-[9px] text-slate-400">
+                  <>
+                    <div className="mt-4 grid grid-cols-3 gap-2">
+                      <div className="rounded-xl bg-white/[0.06] border border-white/10 p-2.5 text-center">
+                        <div className="text-lg font-mono-tabular font-extrabold text-white leading-none">
+                          {currentPlayer.stats.runs}
+                        </div>
+                        <div className="mt-1 text-[9px] font-semibold tracking-wider uppercase text-slate-400">
                           {currentPlayer.sport === 'football' ? 'GOALS' : 'RUNS'}
                         </div>
-                        <div className="font-bold text-white">{currentPlayer.stats.runs}</div>
                       </div>
-                      <div className="rounded-lg bg-white/5 px-2 py-1.5">
-                        <div className="text-[9px] text-slate-400">
-                          {currentPlayer.sport === 'football' ? 'ASSISTS' : 'AVERAGE'}
+                      <div className="rounded-xl bg-white/[0.06] border border-white/10 p-2.5 text-center">
+                        <div className="text-lg font-mono-tabular font-extrabold text-white leading-none">
+                          {currentPlayer.stats.strikeRate}
                         </div>
-                        <div className="font-bold text-white">{currentPlayer.stats.average}</div>
-                      </div>
-                      <div className="rounded-lg bg-white/5 px-2 py-1.5">
-                        <div className="text-[9px] text-slate-400">
+                        <div className="mt-1 text-[9px] font-semibold tracking-wider uppercase text-slate-400">
                           {currentPlayer.sport === 'football' ? 'xG INDEX' : 'STRIKE RATE'}
                         </div>
-                        <div className="font-bold text-emerald-400">{currentPlayer.stats.strikeRate}</div>
                       </div>
-                      <div className="rounded-lg bg-white/5 px-2 py-1.5">
-                        <div className="text-[9px] text-slate-400">
-                          {currentPlayer.sport === 'football' ? 'BEST' : 'HIGHEST'}
+                      <div className="rounded-xl bg-white/[0.06] border border-white/10 p-2.5 text-center">
+                        <div className="text-lg font-mono-tabular font-extrabold text-white leading-none">
+                          {currentPlayer.stats.highestScore}
                         </div>
-                        <div className="font-bold text-white">{currentPlayer.stats.highestScore}</div>
-                      </div>
-                      <div className="rounded-lg bg-white/5 px-2 py-1.5">
-                        <div className="text-[9px] text-slate-400">
-                          {currentPlayer.sport === 'football' ? 'MILESTONES' : '50s / 100s'}
+                        <div className="mt-1 text-[9px] font-semibold tracking-wider uppercase text-slate-400">
+                          {currentPlayer.sport === 'football' ? 'BEST' : 'HIGH SCORE'}
                         </div>
-                        <div className="font-bold text-white">{currentPlayer.stats.fiftiesHundreds}</div>
-                      </div>
-                      <div className="rounded-lg bg-white/5 px-2 py-1.5">
-                        <div className="text-[9px] text-slate-400">
-                          {currentPlayer.sport === 'football' ? 'CLEAN SHEETS' : 'WICKETS'}
-                        </div>
-                        <div className="font-bold text-white">{currentPlayer.stats.wickets}</div>
-                      </div>
-                      <div className="rounded-lg bg-white/5 px-2 py-1.5">
-                        <div className="text-[9px] text-slate-400">
-                          {currentPlayer.sport === 'football' ? 'RATING / 90' : 'ECONOMY'}
-                        </div>
-                        <div className="font-bold text-amber-300">{currentPlayer.stats.economy || '—'}</div>
-                      </div>
-                      <div className="rounded-lg bg-white/5 px-2 py-1.5">
-                        <div className="text-[9px] text-slate-400">
-                          {currentPlayer.sport === 'football' ? 'BEST REC' : 'BEST BWL'}
-                        </div>
-                        <div className="font-bold text-white truncate">{currentPlayer.stats.bestBowling || '—'}</div>
                       </div>
                     </div>
-                    {(currentPlayer.seasonsActive.length > 0 || currentPlayer.historicalNote) && (
-                      <div className="pt-1 border-t border-white/10 text-[10px] text-slate-300 leading-snug space-y-0.5">
-                        {currentPlayer.seasonsActive.length > 0 && (
-                          <div className="font-mono-tabular text-slate-400">
-                            Seasons: <span className="text-slate-200">{currentPlayer.seasonsActive.join(', ')}</span>
-                          </div>
-                        )}
-                        {currentPlayer.historicalNote && (
-                          <p className="text-slate-300">{currentPlayer.historicalNote}</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobileTab('stack');
-                    const el = document.getElementById('my-squad-stack-section');
-                    el?.scrollIntoView({ behavior: 'smooth' });
-                  }}
-                  className="w-full min-h-[48px] rounded-2xl bg-gradient-to-r from-rose-500 via-amber-400 to-emerald-400 px-5 py-3 text-sm font-display font-extrabold text-slate-950 hover:brightness-105 active:scale-[0.99] transition-all shadow-lg whitespace-nowrap"
-                >
-                  My Stack ({selectedSquadPlayers.length}/{room.rules.maxSquadSize}) &amp; Squad XI
-                </button>
+                    {/* Complete Original Career Stats Mini-Grid inside Card */}
+                    <div className="mt-2.5 pt-2.5 border-t border-white/10 grid grid-cols-3 gap-1.5 text-center font-mono-tabular text-[10px]">
+                      <div className="rounded-lg bg-white/[0.04] px-1.5 py-1">
+                        <span className="text-slate-400 block text-[8px] uppercase">
+                          {currentPlayer.sport === 'football' ? 'ASSISTS' : 'AVG'}
+                        </span>
+                        <span className="font-bold text-slate-100">{currentPlayer.stats.average}</span>
+                      </div>
+                      <div className="rounded-lg bg-white/[0.04] px-1.5 py-1">
+                        <span className="text-slate-400 block text-[8px] uppercase">
+                          {currentPlayer.sport === 'football' ? 'CLEAN SH' : 'WKTS'}
+                        </span>
+                        <span className="font-bold text-slate-100">{currentPlayer.stats.wickets}</span>
+                      </div>
+                      <div className="rounded-lg bg-white/[0.04] px-1.5 py-1">
+                        <span className="text-slate-400 block text-[8px] uppercase">
+                          {currentPlayer.sport === 'football' ? 'RTG / 90' : 'ECON'}
+                        </span>
+                        <span className="font-bold text-amber-300">{currentPlayer.stats.economy || '—'}</span>
+                      </div>
+                      <div className="rounded-lg bg-white/[0.04] px-1.5 py-1">
+                        <span className="text-slate-400 block text-[8px] uppercase">50s / 100s</span>
+                        <span className="font-bold text-slate-100">{currentPlayer.stats.fiftiesHundreds}</span>
+                      </div>
+                      <div className="rounded-lg bg-white/[0.04] px-1.5 py-1">
+                        <span className="text-slate-400 block text-[8px] uppercase">BEST BWL</span>
+                        <span className="font-bold text-slate-100 truncate block">{currentPlayer.stats.bestBowling || '—'}</span>
+                      </div>
+                      <div className="rounded-lg bg-white/[0.04] px-1.5 py-1">
+                        <span className="text-slate-400 block text-[8px] uppercase">MVP</span>
+                        <span className="font-bold text-emerald-400">{currentPlayer.rating}</span>
+                      </div>
+                    </div>
+
+                    <div className="mt-2.5 text-center text-[11px] font-mono-tabular text-slate-400">
+                      {currentPlayer.stats.matches} matches
+                      {currentPlayer.seasonsActive.length > 0
+                        ? ` · ${currentPlayer.seasonsActive.slice(0, 3).join(', ')}`
+                        : ` in ${room.seasonYear}`}
+                    </div>
+
+                    {/* Bottom Franchise / Season Strip */}
+                    <div className="mt-3 rounded-xl bg-[#271024] border border-white/10 px-3.5 py-2.5 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="w-1 h-6 rounded-full bg-pink-500 shrink-0" aria-hidden="true" />
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-white truncate">
+                            {currentPlayer.realTeamCode
+                              ? `${currentPlayer.realTeamCode} · ${currentPlayer.category}`
+                              : currentPlayer.category}
+                          </div>
+                          <div className="text-[10px] font-mono-tabular text-pink-200/80">
+                            {room.leagueId} {room.seasonYear}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-mono-tabular text-slate-300 shrink-0">
+                        {currentPlayer.bowlingStyle}
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
-          </div>
 
-          {/* PANEL 2 (CENTER): Live Auction & One-Tap Quick Raise Bidding Stage */}
-          <div className={`lg:col-span-4 ${mobileTab === 'bid' ? 'block' : 'hidden lg:block'}`}>
-            <div className="h-full rounded-3xl border border-slate-800 bg-[#0B1221] p-5 flex flex-col justify-between gap-4 shadow-xl">
-              {/* Top Lot Header */}
-              <div className="text-center space-y-1">
-                <div className="inline-flex items-center justify-center gap-2 text-xs font-bold tracking-wider uppercase text-white">
-                  {room.lotStatus === 'bidding' && (
-                    <span className="w-2 h-2 rounded-full bg-red-500" aria-hidden="true" />
-                  )}
-                  <span>
-                    {room.lotStatus === 'bidding'
-                      ? 'Live Auction'
-                      : room.lotStatus === 'paused'
-                        ? 'Timer Paused'
-                        : room.lotStatus === 'sold_reveal'
-                          ? 'Player Sold'
-                          : room.lotStatus === 'unsold_reveal'
-                            ? 'Player Unsold'
-                            : 'Auction Standby'}
-                  </span>
-                </div>
-                <div className="text-xs font-mono-tabular text-slate-400">
-                  Lot #{currentLotNumber || 1} of {room.players.length}
-                </div>
-              </div>
-
-              {/* Player Mini Identity Bar + Prominent Timer Capsule */}
-              <div className="rounded-2xl border border-slate-800 bg-[#0E172A] p-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-900 border border-slate-700 shrink-0">
-                    {!portraitLoadFailed ? (
-                      <img
-                        src={playerShowcaseImg}
-                        alt={currentPlayer?.name || 'Player'}
-                        referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover object-top"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-xs font-bold text-slate-400">
-                        {currentPlayer?.name?.slice(0, 2).toUpperCase() || 'PL'}
-                      </div>
-                    )}
+            {/* 2. White Bidding Console Card */}
+            <div className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5 shadow-xs space-y-3.5">
+              {/* Top Row: Price + Countdown */}
+              <div className="flex items-end justify-between gap-4">
+                <div>
+                  <div className="text-xs font-medium text-slate-500">
+                    {hasHighestBidder
+                      ? `Current bid · ${highestTeam?.name || 'Leading Team'}`
+                      : 'Starts at'}
                   </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-4 h-4 rounded-full bg-emerald-500 text-slate-950 inline-flex items-center justify-center shrink-0">
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </span>
-                      <span className="text-[11px] text-slate-400 truncate">
-                        {currentPlayer ? `${currentPlayer.role} · ${currentPlayer.country}` : 'Waiting'}
-                      </span>
-                    </div>
-                    <h3 className="text-lg font-display font-bold text-white leading-tight truncate mt-0.5">
-                      {currentPlayer ? currentPlayer.name : 'No Active Player'}
-                    </h3>
-                    {currentPlayer && (
-                      <div className="text-[11px] font-mono-tabular text-slate-400">
-                        Base {formatShortCurrency(currentPlayer.basePrice, room.rules.currency)}
-                      </div>
-                    )}
+                  <div className="mt-0.5 text-3xl sm:text-[36px] leading-none font-display font-extrabold text-slate-950 font-mono-tabular tracking-tight">
+                    {currentPlayer ? formatShortCurrency(room.currentBid, room.rules.currency) : '—'}
                   </div>
                 </div>
 
-                {/* Vertical/Compact High-Contrast Countdown Display */}
-                <div className={`rounded-xl border px-3 py-2 text-center font-mono-tabular shrink-0 min-w-[74px] ${timerAccent}`}>
-                  <div className="text-[9px] font-semibold tracking-wider uppercase opacity-80">Timer</div>
-                  <div className="text-xl font-extrabold leading-tight">
+                <div className="text-right">
+                  <div
+                    className={`text-2xl sm:text-3xl font-mono-tabular font-extrabold leading-none ${
+                      room.lotStatus === 'bidding' && remainingSeconds <= 3
+                        ? 'text-red-600'
+                        : room.lotStatus === 'bidding' && remainingSeconds <= 5
+                          ? 'text-orange-600'
+                          : room.lotStatus === 'paused'
+                            ? 'text-amber-600'
+                            : 'text-slate-950'
+                    }`}
+                  >
                     {room.lotStatus === 'bidding' || room.lotStatus === 'paused'
                       ? formatClockMMSS(remainingSeconds)
                       : room.lotStatus === 'awaiting_hammer'
-                        ? '00:00'
+                        ? '0:00'
                         : '--:--'}
                   </div>
+                  <div className="mt-1.5 h-1 w-20 ml-auto rounded-full bg-slate-200 overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-300 ${
+                        remainingSeconds <= 3 && room.lotStatus === 'bidding'
+                          ? 'bg-red-600'
+                          : 'bg-slate-950'
+                      }`}
+                      style={{ width: `${timerProgressPct}%` }}
+                    />
+                  </div>
                 </div>
               </div>
-
-              {/* Current Bid Showcase Card (Gold Tabular Figure + Bidding Team) */}
-              <div className="rounded-2xl border border-amber-500/45 bg-[#0E1629] p-4 text-center space-y-1.5">
-                <div className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
-                  {hasHighestBidder ? 'Current Bid' : 'Opening Base Price'}
-                </div>
-                <div className="text-4xl sm:text-[42px] leading-none font-mono-tabular font-extrabold text-amber-400 tracking-tight py-1">
-                  {currentPlayer ? formatShortCurrency(room.currentBid, room.rules.currency).toUpperCase() : '—'}
-                </div>
-                <div className="text-xs text-slate-300">
-                  Bidding Team:{' '}
-                  <strong className="text-white font-semibold">
-                    {highestTeam ? highestTeam.name : 'Opening Floor'}
-                  </strong>
-                </div>
-                {currentPlayer && (
-                  <div className="text-[11px] font-mono-tabular text-emerald-400">
-                    Next Min Bid: {formatShortCurrency(nextValidBid, room.rules.currency)} (+{formatShortCurrency(currentIncrement, room.rules.currency)})
-                  </div>
-                )}
-              </div>
-
-              {/* Original Career Stats Visible Directly During Live Bidding */}
-              {currentPlayer && (
-                <div className="rounded-2xl border border-slate-800 bg-[#0E172A] p-3 space-y-2">
-                  <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                    <span>Original Player Stats · {currentPlayer.category}</span>
-                    <span className="font-mono-tabular text-emerald-400">MVP {currentPlayer.rating}</span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1.5 font-mono-tabular text-[11px]">
-                    <div className="rounded-lg border border-slate-800 bg-[#060B18] px-2 py-1.5">
-                      <div className="text-[9px] text-slate-400">MATCHES</div>
-                      <div className="font-bold text-white">{currentPlayer.stats.matches}</div>
-                    </div>
-                    <div className="rounded-lg border border-slate-800 bg-[#060B18] px-2 py-1.5">
-                      <div className="text-[9px] text-slate-400">
-                        {currentPlayer.sport === 'football' ? 'GOALS' : 'RUNS'}
-                      </div>
-                      <div className="font-bold text-white">{currentPlayer.stats.runs}</div>
-                    </div>
-                    <div className="rounded-lg border border-slate-800 bg-[#060B18] px-2 py-1.5">
-                      <div className="text-[9px] text-slate-400">
-                        {currentPlayer.sport === 'football' ? 'ASSISTS' : 'AVG'}
-                      </div>
-                      <div className="font-bold text-white">{currentPlayer.stats.average}</div>
-                    </div>
-                    <div className="rounded-lg border border-slate-800 bg-[#060B18] px-2 py-1.5">
-                      <div className="text-[9px] text-slate-400">
-                        {currentPlayer.sport === 'football' ? 'xG' : 'SR'}
-                      </div>
-                      <div className="font-bold text-emerald-400">{currentPlayer.stats.strikeRate}</div>
-                    </div>
-                    <div className="rounded-lg border border-slate-800 bg-[#060B18] px-2 py-1.5">
-                      <div className="text-[9px] text-slate-400">
-                        {currentPlayer.sport === 'football' ? 'BEST' : 'HS'}
-                      </div>
-                      <div className="font-bold text-white">{currentPlayer.stats.highestScore}</div>
-                    </div>
-                    <div className="rounded-lg border border-slate-800 bg-[#060B18] px-2 py-1.5">
-                      <div className="text-[9px] text-slate-400">
-                        {currentPlayer.sport === 'football' ? 'MILESTONES' : '50/100'}
-                      </div>
-                      <div className="font-bold text-white">{currentPlayer.stats.fiftiesHundreds}</div>
-                    </div>
-                    <div className="rounded-lg border border-slate-800 bg-[#060B18] px-2 py-1.5">
-                      <div className="text-[9px] text-slate-400">
-                        {currentPlayer.sport === 'football' ? 'CS' : 'WKTS'}
-                      </div>
-                      <div className="font-bold text-white">{currentPlayer.stats.wickets}</div>
-                    </div>
-                    <div className="rounded-lg border border-slate-800 bg-[#060B18] px-2 py-1.5">
-                      <div className="text-[9px] text-slate-400">
-                        {currentPlayer.sport === 'football' ? 'RTG/90' : 'ECON'}
-                      </div>
-                      <div className="font-bold text-amber-300">{currentPlayer.stats.economy || '—'}</div>
-                    </div>
-                    <div className="rounded-lg border border-slate-800 bg-[#060B18] px-2 py-1.5">
-                      <div className="text-[9px] text-slate-400">
-                        {currentPlayer.sport === 'football' ? 'RECORD' : 'BEST'}
-                      </div>
-                      <div className="font-bold text-white truncate">{currentPlayer.stats.bestBowling || '—'}</div>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-between gap-1 text-[10px] text-slate-400 pt-0.5">
-                    <span>{currentPlayer.battingStyle}{currentPlayer.bowlingStyle ? ` · ${currentPlayer.bowlingStyle}` : ''}</span>
-                    {currentPlayer.historicalPeakPrice && (
-                      <span className="text-amber-300 font-mono-tabular">Peak: {currentPlayer.historicalPeakPrice}</span>
-                    )}
-                  </div>
-                </div>
-              )}
 
               {/* Feedback Banner */}
               {(localError || bidFeedback) && (
                 <div
                   className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-xs ${
                     localError || bidFeedback?.type === 'rejected'
-                      ? 'border-red-500/40 bg-red-950/60 text-red-200'
-                      : 'border-emerald-500/40 bg-emerald-950/60 text-emerald-200'
+                      ? 'border-red-200 bg-red-50 text-red-700'
+                      : 'border-emerald-200 bg-emerald-50 text-emerald-700'
                   }`}
                 >
                   {localError || bidFeedback?.type === 'rejected' ? (
-                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                    <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
                   ) : (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                   )}
                   <span className="leading-snug">{localError || bidFeedback?.message}</span>
                 </div>
               )}
 
-              {/* Bidding Action Area */}
               {isSnakeMode ? (
-                <div className="space-y-3">
-                  <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
-                    <div className="font-bold text-amber-300">
+                <div className="space-y-2.5">
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                    <strong>
                       Snake Draft Round {room.snakeDraftRound} · Pick #{room.snakeDraftPickIndex + 1}
-                    </div>
-                    <div className="text-slate-200 mt-0.5">
-                      Turn: <strong>{snakeTurnTeam?.name}</strong>
-                    </div>
+                    </strong>{' '}
+                    — On the clock: {snakeTurnTeam?.name}
                   </div>
                   {currentPlayer && (canActAsHost || snakeTurnTeam?.id === selectedTeam?.id) && onSendCommand && (
                     <button
@@ -1035,55 +862,83 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
                           playerId: currentPlayer.id,
                         })
                       }
-                      className="w-full min-h-[52px] rounded-2xl bg-amber-400 px-5 py-3 text-sm font-display font-extrabold text-slate-950 hover:bg-amber-300"
+                      className="w-full min-h-[48px] rounded-xl bg-[#2D62FF] px-5 py-3 text-sm font-display font-bold text-white hover:bg-[#1E52E8]"
                     >
                       Draft {currentPlayer.name} ({formatShortCurrency(currentPlayer.basePrice, room.rules.currency)})
                     </button>
                   )}
                 </div>
               ) : room.rules.biddingStyle === 'verbal' && !canActAsHost ? (
-                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-xs text-amber-200">
-                  <strong>Verbal Table Bidding Active:</strong> Call your bids aloud in the room. Winning bids update live on your screen.
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-900">
+                  <strong>Verbal Table Bidding Active:</strong> Call your bids aloud in the room. Winning bids update live.
                 </div>
               ) : (
-                <form onSubmit={handlePlaceStagedBid} className="space-y-3">
-                  {/* Default Set Option + Helper Header */}
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-slate-300">Quick-bidding preset or custom value</span>
+                <>
+                  {/* Primary Two-Button Action Row (Black + Royal Blue matching screenshot) */}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      disabled={!canBidNow}
+                      onClick={() =>
+                        submitBid(nextValidBid, canActAsHost ? 'host' : 'quick')
+                      }
+                      className="min-h-[54px] rounded-xl bg-[#0B0F19] hover:bg-[#181F32] text-white px-3 py-2.5 text-center transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+                    >
+                      <div className="text-sm sm:text-base font-display font-bold leading-tight">
+                        {isHoldingHighest
+                          ? 'Leading Bid'
+                          : `Bid ${formatShortCurrency(nextValidBid, room.rules.currency)}`}
+                      </div>
+                      <div className="text-[11px] text-slate-300 mt-0.5">
+                        {hasHighestBidder ? 'default increment' : 'open at base price'}
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={!canBidNow}
+                      onClick={() =>
+                        submitBid(stepUpBid, canActAsHost ? 'host' : 'quick')
+                      }
+                      className="min-h-[54px] rounded-xl bg-[#2D62FF] hover:bg-[#1D52EB] text-white px-3 py-2.5 text-center transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+                    >
+                      <div className="text-sm sm:text-base font-display font-bold leading-tight">
+                        Bid {formatShortCurrency(stepUpBid, room.rules.currency)}
+                      </div>
+                      <div className="text-[11px] text-blue-100 mt-0.5">
+                        open at {formatShortCurrency(stepUpBid, room.rules.currency)}
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Quick-Raise Increment Chips + Default Option */}
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <button
                       type="button"
                       disabled={!currentPlayer}
                       onClick={handleSelectDefaultPreset}
-                      className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-mono-tabular font-bold transition-colors whitespace-nowrap shrink-0 ${
+                      className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-mono-tabular font-semibold transition-colors whitespace-nowrap ${
                         selectedPreset === 'default'
-                          ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300'
-                          : 'border-slate-700 bg-[#060B18] text-slate-300 hover:border-slate-500'
+                          ? 'border-[#2D62FF] bg-blue-50 text-[#2D62FF]'
+                          : 'border-slate-200 bg-[#F8FAFC] text-slate-700 hover:border-slate-300'
                       }`}
                     >
                       <RotateCcw className="w-3 h-3" />
-                      <span>Default ({formatShortCurrency(nextValidBid, room.rules.currency)})</span>
+                      <span>Default</span>
                     </button>
-                  </div>
-
-                  {/* 6 Quick-Raise Preset Chips: 10L, 20L, 50L, 1 CR, 5 CR, 10 CR */}
-                  <div className="grid grid-cols-3 gap-2">
                     {QUICK_RAISE_PRESETS.map((chip) => {
-                      const isActive = selectedPreset === chip.key;
+                      const active = selectedPreset === chip.key;
                       return (
                         <button
                           key={chip.key}
                           type="button"
                           disabled={!currentPlayer}
                           onClick={() => handleSelectRaisePreset(chip.key, chip.value)}
-                          className={`min-h-[44px] rounded-xl border px-2 py-2 text-xs font-mono-tabular font-bold transition-all active:scale-[0.98] whitespace-nowrap ${
-                            isActive
-                              ? chip.highlightClass || 'border-amber-400 bg-amber-500/20 text-amber-300'
-                              : chip.key === '10cr'
-                                ? 'border-fuchsia-500/45 bg-[#1B1028] text-fuchsia-200 hover:border-fuchsia-400'
-                                : chip.key === '1cr' || chip.key === '5cr' || chip.key === '50l'
-                                  ? 'border-amber-500/35 bg-[#111829] text-amber-200 hover:border-amber-400'
-                                  : 'border-dashed border-slate-600 bg-[#0B1325] text-slate-200 hover:border-slate-400'
-                          } disabled:opacity-40`}
+                          className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-mono-tabular font-semibold transition-colors whitespace-nowrap ${
+                            active
+                              ? 'border-[#2D62FF] bg-[#2D62FF] text-white'
+                              : 'border-slate-200 bg-[#F8FAFC] text-slate-700 hover:border-[#2D62FF] hover:text-[#2D62FF]'
+                          }`}
                         >
                           +{chip.label}
                         </button>
@@ -1091,13 +946,11 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
                     })}
                   </div>
 
-                  {/* Custom Manual Value Input */}
+                  {/* Custom Manual Input + Bid Button (Matches "Type any amount Cr [Bid]") */}
                   {(room.rules.allowCustomBid || canActAsHost) && (
-                    <div className="flex items-center gap-2">
-                      <div className="relative flex-1">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono-tabular text-slate-400">
-                          ₹
-                        </span>
+                    <form onSubmit={handlePlaceStagedBid} className="flex items-center gap-2">
+                      <div className="flex-1 flex items-center gap-2 rounded-xl border border-slate-200 bg-[#F4F6FA] px-3.5 py-2.5 focus-within:border-[#2D62FF] focus-within:bg-white transition-colors min-h-[44px]">
+                        <Pencil className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <input
                           id="custom-bid-input"
                           type="text"
@@ -1108,338 +961,336 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
                             setCustomInput(e.target.value);
                             setLocalError(null);
                           }}
-                          placeholder="Enter bid (e.g. 2.5 Cr or 75 L)"
-                          className="w-full min-h-[44px] rounded-xl border border-slate-700 bg-[#060B18] pl-7 pr-3 py-2 text-sm font-mono-tabular font-bold text-white placeholder:text-slate-600 focus:border-amber-400 focus:outline-none"
+                          placeholder="Type any amount"
+                          className="w-full bg-transparent text-sm font-mono-tabular font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none"
                         />
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="text-[10px] text-slate-400">BID VALUE</div>
-                        <div className="text-xs font-mono-tabular font-bold text-amber-300">
+                        <span className="text-xs font-mono-tabular text-slate-500 shrink-0">
                           {formatShortCurrency(parsedStagedBid, room.rules.currency)}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Big Gold Primary CTA Button */}
-                  <button
-                    type="submit"
-                    disabled={!canBidNow}
-                    className="w-full min-h-[54px] rounded-full bg-gradient-to-r from-amber-400 to-amber-500 px-5 py-3 text-sm sm:text-base font-display font-extrabold text-slate-950 hover:from-amber-300 hover:to-amber-400 active:scale-[0.99] disabled:opacity-45 disabled:cursor-not-allowed transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 whitespace-nowrap"
-                  >
-                    <Gavel className="w-4 h-4 shrink-0" />
-                    <span>
-                      {isHoldingHighest
-                        ? `LEADING BID (${formatShortCurrency(room.currentBid, room.rules.currency)})`
-                        : currentPlayer
-                          ? `PLACE BID · ${formatShortCurrency(parsedStagedBid, room.rules.currency).toUpperCase()}`
-                          : 'WAITING FOR PLAYER'}
-                    </span>
-                  </button>
-
-                  <div className="text-center text-[11px] text-slate-400">
-                    {isHoldingHighest
-                      ? `${selectedTeam?.name} currently holds the highest bid`
-                      : selectedPreset === 'default'
-                        ? 'Default Next Valid Bid ready'
-                        : `Quick Raise staged · Tap Place Bid to confirm`}
-                  </div>
-                </form>
-              )}
-            </div>
-          </div>
-
-          {/* PANEL 3 (RIGHT): Auction Summary, Team Purses, Live Bidding History & Sold Summary */}
-          <div className={`lg:col-span-4 ${mobileTab === 'summary' ? 'block' : 'hidden lg:block'}`}>
-            <div className="h-full rounded-3xl border border-slate-800 bg-[#0B1221] p-5 flex flex-col justify-between gap-4 shadow-xl">
-              {/* Top Header */}
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-display font-bold text-white">Auction Summary</h3>
-                <span className="text-xs text-slate-400 font-mono-tabular">{room.teams.length} Teams</span>
-              </div>
-
-              {/* 2x2 Colored Franchise Purse Grid */}
-              <div className="grid grid-cols-2 gap-2.5 max-h-[205px] overflow-y-auto pr-0.5">
-                {room.teams.map((t, teamIdx) => {
-                  const isSelected = t.id === selectedTeam?.id;
-                  const canSwitch = !isAiDuelMode && (canActAsHost || !assignedTeamId);
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      disabled={!canSwitch}
-                      onClick={() => {
-                        if (!canSwitch) return;
-                        setActiveTeamId(t.id);
-                        onSelectTeam?.(t.id);
-                        setLocalError(null);
-                      }}
-                      className={`rounded-2xl border p-3 text-left transition-all ${
-                        isSelected
-                          ? 'ring-1 ring-amber-400/70'
-                          : canSwitch
-                            ? 'hover:border-slate-600'
-                            : 'cursor-default'
-                      }`}
-                      style={{
-                        borderColor: isSelected ? undefined : `${t.primaryColor}55`,
-                        backgroundColor: `${t.primaryColor}14`,
-                      }}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <TeamCrest
-                          shortCode={t.shortCode}
-                          primaryColor={t.primaryColor}
-                          secondaryColor={t.secondaryColor}
-                          size="sm"
-                        />
-                        <span className="text-xs font-semibold text-slate-200 truncate">
-                          {t.shortCode} {isSelected ? '· You' : isAiDuelMode && teamIdx === 1 ? '· AI' : ''}
                         </span>
                       </div>
-                      <div className="mt-2 text-base font-mono-tabular font-extrabold text-amber-300 truncate">
-                        {formatShortCurrency(t.remainingPurse, room.rules.currency).toUpperCase()}
-                      </div>
-                      <div className="text-[10px] font-mono-tabular text-slate-400 mt-0.5">
-                        Squad {t.squad.length}/{room.rules.maxSquadSize}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+                      <button
+                        type="submit"
+                        disabled={!canBidNow}
+                        className="min-h-[44px] px-5 rounded-xl bg-[#0B0F19] hover:bg-[#2D62FF] text-white text-xs sm:text-sm font-display font-bold transition-colors disabled:bg-slate-200 disabled:text-slate-400 shrink-0"
+                      >
+                        Bid
+                      </button>
+                    </form>
+                  )}
 
-              {/* Live Bidding History Feed */}
-              <div className="flex-1 min-h-[180px] flex flex-col">
-                <div className="flex items-center justify-between mb-2.5">
-                  <span className="text-[11px] font-bold tracking-wider uppercase text-slate-300">
-                    Live Bidding History
-                  </span>
-                  <span className="text-[11px] font-mono-tabular text-slate-400">
-                    {room.currentLotBids.length} {room.currentLotBids.length === 1 ? 'bid' : 'bids'}
+                  <div className="text-[11px] text-slate-500">
+                    Every bid resets the clock to {room.rules.resetTimerSeconds}s.
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* 3. Three KPI Metric Cards (Purse left / Max you can bid / Players needed) */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-xl bg-white border border-slate-200 p-3.5 shadow-xs">
+                <div className="text-[11px] text-slate-500">Purse left</div>
+                <div className="mt-1 text-base sm:text-lg font-display font-extrabold font-mono-tabular text-slate-950">
+                  {formatShortCurrency(selectedTeam?.remainingPurse || 0, room.rules.currency)}
+                </div>
+              </div>
+              <div className="rounded-xl bg-white border border-slate-200 p-3.5 shadow-xs">
+                <div className="text-[11px] text-slate-500">Max you can bid</div>
+                <div className="mt-1 text-base sm:text-lg font-display font-extrabold font-mono-tabular text-slate-950">
+                  {formatShortCurrency(reserveInfo.maxAllowedBid, room.rules.currency)}
+                </div>
+              </div>
+              <div className="rounded-xl bg-white border border-slate-200 p-3.5 shadow-xs">
+                <div className="text-[11px] text-slate-500">Players needed</div>
+                <div className="mt-1 text-base sm:text-lg font-display font-extrabold font-mono-tabular text-slate-950">
+                  {playersNeededCount}
+                </div>
+              </div>
+            </div>
+
+            {/* 4. Teams Grid with Role Quota Slots (BATTERS / BOWLERS / KEEPER / ALL-ROUNDERS) */}
+            <section className="space-y-3 pt-1">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-display font-bold text-slate-950">Teams</h3>
+                <span className="text-xs font-mono-tabular text-slate-500">
+                  {room.teams.length} {room.teams.length === 1 ? 'Team' : 'Teams'}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {room.teams.map((t, idx) => renderTeamCard(t, idx))}
+              </div>
+            </section>
+          </div>
+
+          {/* RIGHT SIDEBAR RAIL (Last Bids + Full Original Stats + Acquired Stack XI) */}
+          <aside className="lg:col-span-4 space-y-4">
+            {/* Last Bids Card (Matches "Last ..." card in screenshot) */}
+            <div className="rounded-2xl bg-white border border-slate-200 p-4 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-display font-bold text-slate-950">Last Bids</h3>
+                <span className="text-xs font-mono-tabular text-slate-400">
+                  {room.currentLotBids.length} {room.currentLotBids.length === 1 ? 'bid' : 'bids'}
+                </span>
+              </div>
+              {room.currentLotBids.length === 0 ? (
+                <div className="text-xs text-slate-500 py-2">Nobody has bid yet</div>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-0.5">
+                  {room.currentLotBids.map((bid, idx) => {
+                    const bidTeam = room.teams.find((tm) => tm.id === bid.teamId);
+                    const timeText = new Date(bid.timestamp).toLocaleTimeString([], {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    });
+                    return (
+                      <div
+                        key={bid.id}
+                        className={`rounded-xl border px-3 py-2 flex items-center justify-between gap-2 ${
+                          idx === 0
+                            ? 'border-[#2D62FF]/40 bg-blue-50/70'
+                            : 'border-slate-200 bg-[#F8FAFC]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <TeamCrest
+                            shortCode={bidTeam?.shortCode || bid.teamName.slice(0, 2).toUpperCase()}
+                            primaryColor={bid.teamColor}
+                            secondaryColor={bidTeam?.secondaryColor}
+                            size="sm"
+                          />
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-slate-900 truncate">
+                              {bid.teamName}
+                            </div>
+                            <div className="text-[10px] font-mono-tabular text-slate-400">
+                              {timeText}
+                            </div>
+                          </div>
+                        </div>
+                        <span className="text-sm font-mono-tabular font-extrabold text-slate-950 shrink-0">
+                          {formatShortCurrency(bid.amount, room.rules.currency)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Complete Original Player Career Stats & Historical Profile */}
+            {currentPlayer && (
+              <div className="rounded-2xl bg-white border border-slate-200 p-4 shadow-xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-display font-bold text-slate-950">
+                    Original Career Stats
+                  </h3>
+                  <span className="text-xs font-mono-tabular font-bold text-[#2D62FF]">
+                    Rating {currentPlayer.rating}/100
                   </span>
                 </div>
 
-                {room.currentLotBids.length === 0 ? (
-                  <div className="flex-1 rounded-2xl border border-slate-800 bg-[#0E172A] p-4 flex items-center justify-center text-center text-xs text-slate-500">
-                    No bids yet for {currentPlayer?.name || 'current lot'}. Tap Place Bid to open.
+                <div className="grid grid-cols-3 gap-2 font-mono-tabular text-xs">
+                  <div className="rounded-xl bg-[#F8FAFC] border border-slate-200 p-2.5">
+                    <div className="text-[10px] text-slate-500">MATCHES</div>
+                    <div className="font-bold text-slate-950 mt-0.5">{currentPlayer.stats.matches}</div>
+                  </div>
+                  <div className="rounded-xl bg-[#F8FAFC] border border-slate-200 p-2.5">
+                    <div className="text-[10px] text-slate-500">
+                      {currentPlayer.sport === 'football' ? 'GOALS' : 'RUNS'}
+                    </div>
+                    <div className="font-bold text-slate-950 mt-0.5">{currentPlayer.stats.runs}</div>
+                  </div>
+                  <div className="rounded-xl bg-[#F8FAFC] border border-slate-200 p-2.5">
+                    <div className="text-[10px] text-slate-500">
+                      {currentPlayer.sport === 'football' ? 'ASSISTS' : 'AVERAGE'}
+                    </div>
+                    <div className="font-bold text-slate-950 mt-0.5">{currentPlayer.stats.average}</div>
+                  </div>
+                  <div className="rounded-xl bg-[#F8FAFC] border border-slate-200 p-2.5">
+                    <div className="text-[10px] text-slate-500">
+                      {currentPlayer.sport === 'football' ? 'xG INDEX' : 'STRIKE RATE'}
+                    </div>
+                    <div className="font-bold text-[#2D62FF] mt-0.5">{currentPlayer.stats.strikeRate}</div>
+                  </div>
+                  <div className="rounded-xl bg-[#F8FAFC] border border-slate-200 p-2.5">
+                    <div className="text-[10px] text-slate-500">
+                      {currentPlayer.sport === 'football' ? 'BEST' : 'HIGH SCORE'}
+                    </div>
+                    <div className="font-bold text-slate-950 mt-0.5">{currentPlayer.stats.highestScore}</div>
+                  </div>
+                  <div className="rounded-xl bg-[#F8FAFC] border border-slate-200 p-2.5">
+                    <div className="text-[10px] text-slate-500">
+                      {currentPlayer.sport === 'football' ? 'MILESTONES' : '50s / 100s'}
+                    </div>
+                    <div className="font-bold text-slate-950 mt-0.5">{currentPlayer.stats.fiftiesHundreds}</div>
+                  </div>
+                  <div className="rounded-xl bg-[#F8FAFC] border border-slate-200 p-2.5">
+                    <div className="text-[10px] text-slate-500">
+                      {currentPlayer.sport === 'football' ? 'CLEAN SH' : 'WICKETS'}
+                    </div>
+                    <div className="font-bold text-slate-950 mt-0.5">{currentPlayer.stats.wickets}</div>
+                  </div>
+                  <div className="rounded-xl bg-[#F8FAFC] border border-slate-200 p-2.5">
+                    <div className="text-[10px] text-slate-500">
+                      {currentPlayer.sport === 'football' ? 'RTG / 90' : 'ECONOMY'}
+                    </div>
+                    <div className="font-bold text-slate-950 mt-0.5">{currentPlayer.stats.economy || '—'}</div>
+                  </div>
+                  <div className="rounded-xl bg-[#F8FAFC] border border-slate-200 p-2.5">
+                    <div className="text-[10px] text-slate-500">
+                      {currentPlayer.sport === 'football' ? 'BEST REC' : 'BEST BWL'}
+                    </div>
+                    <div className="font-bold text-slate-950 mt-0.5 truncate">{currentPlayer.stats.bestBowling || '—'}</div>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-slate-600 space-y-1 pt-1 border-t border-slate-100">
+                  <div>
+                    <span className="text-slate-400">Styles:</span>{' '}
+                    <strong className="text-slate-800">{currentPlayer.battingStyle}</strong>
+                    {currentPlayer.bowlingStyle ? ` · ${currentPlayer.bowlingStyle}` : ''}
+                  </div>
+                  {currentPlayer.seasonsActive.length > 0 && (
+                    <div className="font-mono-tabular">
+                      <span className="font-sans text-slate-400">Seasons:</span>{' '}
+                      {currentPlayer.seasonsActive.join(', ')}
+                    </div>
+                  )}
+                  {currentPlayer.historicalPeakPrice && (
+                    <div className="font-mono-tabular">
+                      <span className="font-sans text-slate-400">Peak Auction:</span>{' '}
+                      <strong className="text-slate-900">{currentPlayer.historicalPeakPrice}</strong>
+                    </div>
+                  )}
+                  {currentPlayer.historicalNote && (
+                    <p className="text-slate-500 leading-relaxed pt-0.5">
+                      {currentPlayer.historicalNote}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* My Acquired Stack & Playing XI Selector */}
+            {selectedTeam && (
+              <div
+                id="my-squad-stack-section"
+                className="rounded-2xl bg-white border border-slate-200 p-4 shadow-xs space-y-3"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <Layers className="w-4 h-4 text-[#2D62FF]" />
+                    <h3 className="text-sm font-display font-bold text-slate-950">
+                      Squad &amp; Playing XI
+                    </h3>
+                  </div>
+                  <span className="text-[11px] font-mono-tabular text-slate-500">
+                    XI {selectedTeam.startingXI?.length || 0}/{xiLimit} · +{extrasLimit} Extras
+                  </span>
+                </div>
+
+                {selectedSquadPlayers.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-[#FAFBFD] p-4 text-center text-xs text-slate-400">
+                    No players acquired yet. Winning bids add players directly here.
                   </div>
                 ) : (
-                  <div className="space-y-2 max-h-[210px] overflow-y-auto pr-0.5">
-                    {room.currentLotBids.map((bid, idx) => {
-                      const bidTeam = room.teams.find((tm) => tm.id === bid.teamId);
-                      const timeText = new Date(bid.timestamp).toLocaleTimeString([], {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      });
+                  <div className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
+                    {selectedSquadPlayers.map((p) => {
+                      const inXI = selectedTeam.startingXI?.includes(p.id);
+                      const isC = selectedTeam.captainId === p.id;
+                      const isVC = selectedTeam.viceCaptainId === p.id;
                       return (
                         <div
-                          key={bid.id}
-                          className={`rounded-2xl border px-3.5 py-2.5 flex items-center justify-between gap-3 ${
-                            idx === 0
-                              ? 'border-emerald-500/60 bg-emerald-500/10'
-                              : 'border-slate-800 bg-[#0E172A]'
+                          key={p.id}
+                          className={`rounded-xl border px-3 py-2 text-xs flex items-center justify-between gap-2 ${
+                            inXI
+                              ? 'border-[#2D62FF]/40 bg-blue-50/50'
+                              : 'border-slate-200 bg-[#F8FAFC]'
                           }`}
                         >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <TeamCrest
-                              shortCode={bidTeam?.shortCode || bid.teamName.slice(0, 2).toUpperCase()}
-                              primaryColor={bid.teamColor}
-                              secondaryColor={bidTeam?.secondaryColor}
-                              size="sm"
-                            />
-                            <div className="min-w-0">
-                              <div className="text-xs font-semibold text-white truncate">
-                                {bid.teamName} bid
-                              </div>
-                              <div className="text-sm font-mono-tabular font-extrabold text-amber-300">
-                                {formatShortCurrency(bid.amount, room.rules.currency).toUpperCase()}
-                              </div>
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-950 flex items-center gap-1">
+                              <span className="truncate">{p.name}</span>
+                              {isC && <span className="text-[10px] font-mono-tabular text-[#2D62FF]">(C)</span>}
+                              {isVC && <span className="text-[10px] font-mono-tabular text-emerald-600">(VC)</span>}
+                            </div>
+                            <div className="text-[10px] font-mono-tabular text-slate-500">
+                              {p.role} · {formatShortCurrency(p.soldPrice || p.basePrice, room.rules.currency)} · M:{p.stats.matches} R:{p.stats.runs}
                             </div>
                           </div>
-                          <div className="text-right shrink-0 flex flex-col items-end gap-1">
-                            {idx === 0 && (
-                              <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 inline-flex items-center justify-center">
-                                <Check className="w-3 h-3 stroke-[3]" />
-                              </span>
-                            )}
-                            <span className="text-[10px] font-mono-tabular text-slate-400">{timeText}</span>
-                          </div>
+                          {onSendCommand && (
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => togglePlayerInXI(p.id)}
+                                className={`rounded-lg border px-2 py-1 text-[10px] font-semibold ${
+                                  inXI
+                                    ? 'border-[#2D62FF] bg-[#2D62FF] text-white'
+                                    : 'border-slate-200 bg-white text-slate-600'
+                                }`}
+                              >
+                                {inXI ? 'XI' : 'Ext'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setLineupRole(p.id, 'C')}
+                                className={`rounded-lg border px-1.5 py-1 text-[10px] font-bold ${
+                                  isC
+                                    ? 'border-amber-400 bg-amber-400 text-slate-950'
+                                    : 'border-slate-200 bg-white text-slate-600'
+                                }`}
+                              >
+                                C
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setLineupRole(p.id, 'VC')}
+                                className={`rounded-lg border px-1.5 py-1 text-[10px] font-bold ${
+                                  isVC
+                                    ? 'border-emerald-500 bg-emerald-500 text-white'
+                                    : 'border-slate-200 bg-white text-slate-600'
+                                }`}
+                              >
+                                VC
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
                 )}
               </div>
+            )}
 
-              {/* Bottom Crisp White Players Sold & Budget Summary Card */}
-              <div className="rounded-2xl bg-white text-slate-950 px-4 py-3.5 shadow-lg flex items-center justify-between gap-2">
-                {highestTeam || selectedTeam ? (
-                  <TeamCrest
-                    shortCode={(highestTeam || selectedTeam)!.shortCode}
-                    primaryColor={(highestTeam || selectedTeam)!.primaryColor}
-                    secondaryColor={(highestTeam || selectedTeam)!.secondaryColor}
-                    size="sm"
-                  />
-                ) : (
-                  <div className="w-8 h-8 rounded-lg bg-slate-200" />
-                )}
-
-                <div className="text-center min-w-0">
-                  <div className="text-[10px] font-bold tracking-wider uppercase text-slate-500">
-                    Players Sold
-                  </div>
-                  <div className="text-2xl font-mono-tabular font-extrabold text-slate-950 leading-tight">
-                    {soldCount}/{room.players.length}
-                  </div>
-                  <div className="text-[11px] font-medium text-slate-600 font-mono-tabular truncate">
-                    Budget Left: {formatShortCurrency(selectedTeam?.remainingPurse || 0, room.rules.currency)}
-                  </div>
+            {/* Target Wishlist Strip */}
+            {selectedTeam && wishlistIds.length > 0 && (
+              <div className="rounded-2xl bg-white border border-slate-200 p-4 shadow-xs space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                  <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                  <span>Target Wishlist ({wishlistIds.length})</span>
                 </div>
-
-                {secondarySummaryTeam ? (
-                  <TeamCrest
-                    shortCode={secondarySummaryTeam.shortCode}
-                    primaryColor={secondarySummaryTeam.primaryColor}
-                    secondaryColor={secondarySummaryTeam.secondaryColor}
-                    size="sm"
-                  />
-                ) : (
-                  <div className="w-8 h-8 rounded-lg bg-slate-200" />
-                )}
+                <div className="space-y-1.5">
+                  {wishlistIds.map((pid) => {
+                    const p = playersMap.get(pid);
+                    if (!p) return null;
+                    return (
+                      <div
+                        key={pid}
+                        className="flex items-center justify-between text-xs rounded-lg bg-[#F8FAFC] px-3 py-2 border border-slate-200"
+                      >
+                        <span className="text-slate-900 font-medium truncate">{p.name}</span>
+                        <span className="font-mono-tabular text-slate-500 shrink-0 ml-2">
+                          {p.status === 'sold'
+                            ? `Sold ${formatShortCurrency(p.soldPrice || 0, room.rules.currency)}`
+                            : formatShortCurrency(p.basePrice, room.rules.currency)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* My Acquired Stack & Final Playing XI Selector (Desktop Below + Mobile Stack Tab) */}
-      {selectedTeam && (
-        <div
-          id="my-squad-stack-section"
-          className={`rounded-3xl border border-slate-800 bg-[#0B1221] p-5 space-y-3 ${
-            mobileTab === 'stack' ? 'block' : 'hidden lg:block'
-          }`}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Layers className="w-4 h-4 text-emerald-400" />
-              <h3 className="text-sm font-display font-bold text-white">
-                {selectedTeam.name} — Acquired Stack ({selectedSquadPlayers.length}/{room.rules.maxSquadSize})
-              </h3>
-            </div>
-            <span className="text-xs font-mono-tabular text-amber-300 font-semibold">
-              Final Playing XI: {selectedTeam.startingXI?.length || 0}/{xiLimit} · Extras:{' '}
-              {Math.max(0, selectedSquadPlayers.length - (selectedTeam.startingXI?.length || 0))}
-            </span>
-          </div>
-
-          <p className="text-xs text-slate-400">
-            Acquire up to {room.rules.maxSquadSize} players (including +{extrasLimit} free-choice extras), then select your {xiLimit} starters, Captain (C), and Vice-Captain (VC) below.
-          </p>
-
-          {selectedSquadPlayers.length === 0 ? (
-            <div className="rounded-2xl border border-slate-800 bg-[#060B18] p-5 text-center text-xs text-slate-500">
-              No players won in your stack yet. Winning bids add players directly here.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-80 overflow-y-auto pr-1">
-              {selectedSquadPlayers.map((p) => {
-                const inXI = selectedTeam.startingXI?.includes(p.id);
-                const isC = selectedTeam.captainId === p.id;
-                const isVC = selectedTeam.viceCaptainId === p.id;
-                return (
-                  <div
-                    key={p.id}
-                    className={`flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-3.5 py-2.5 text-xs ${
-                      inXI
-                        ? 'border-emerald-500/40 bg-emerald-500/10'
-                        : 'border-slate-800 bg-[#060B18]'
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <div className="font-bold text-white flex items-center gap-1.5">
-                        <span className="truncate">{p.name}</span>
-                        {isC && <span className="text-[10px] font-mono-tabular text-amber-300">(C)</span>}
-                        {isVC && <span className="text-[10px] font-mono-tabular text-emerald-300">(VC)</span>}
-                      </div>
-                      <div className="text-[11px] text-slate-400 font-mono-tabular">
-                        {p.role} · {formatShortCurrency(p.soldPrice || p.basePrice, room.rules.currency)}
-                      </div>
-                      <div className="text-[10px] text-slate-400 font-mono-tabular mt-0.5">
-                        M:{p.stats.matches} · {p.sport === 'football' ? 'G' : 'R'}:{p.stats.runs} · SR:{p.stats.strikeRate} · {p.sport === 'football' ? 'CS' : 'W'}:{p.stats.wickets}
-                      </div>
-                    </div>
-                    {onSendCommand && (
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => togglePlayerInXI(p.id)}
-                          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold min-h-[32px] whitespace-nowrap ${
-                            inXI
-                              ? 'border-emerald-400 bg-emerald-500 text-slate-950'
-                              : 'border-slate-700 text-slate-300 hover:border-slate-500'
-                          }`}
-                        >
-                          {inXI ? 'Playing XI' : 'Extra'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setLineupRole(p.id, 'C')}
-                          className={`rounded-lg border px-2 py-1 text-[10px] font-bold min-h-[32px] ${
-                            isC
-                              ? 'border-amber-400 bg-amber-400 text-slate-950'
-                              : 'border-slate-700 text-slate-300'
-                          }`}
-                        >
-                          C
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setLineupRole(p.id, 'VC')}
-                          className={`rounded-lg border px-2 py-1 text-[10px] font-bold min-h-[32px] ${
-                            isVC
-                              ? 'border-emerald-400 bg-emerald-400 text-slate-950'
-                              : 'border-slate-700 text-slate-300'
-                          }`}
-                        >
-                          VC
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Target Wishlist Strip (When Items Starred) */}
-      {selectedTeam && wishlistIds.length > 0 && !isLobbyLocked && (
-        <div className="rounded-2xl border border-slate-800 bg-[#0B1221] p-4 space-y-2">
-          <div className="flex items-center gap-2 text-xs font-semibold text-amber-300">
-            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-            <span>Target Wishlist ({wishlistIds.length})</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-            {wishlistIds.map((pid) => {
-              const p = playersMap.get(pid);
-              if (!p) return null;
-              return (
-                <div
-                  key={pid}
-                  className="flex items-center justify-between text-xs rounded-xl bg-[#060B18] px-3 py-2 border border-slate-800"
-                >
-                  <span className="text-white font-medium truncate">{p.name}</span>
-                  <span className="font-mono-tabular text-slate-400 shrink-0 ml-2">
-                    {p.status === 'sold'
-                      ? `Sold ${formatShortCurrency(p.soldPrice || 0, room.rules.currency)}`
-                      : formatShortCurrency(p.basePrice, room.rules.currency)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+            )}
+          </aside>
         </div>
       )}
     </div>
