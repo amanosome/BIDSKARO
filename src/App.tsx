@@ -68,9 +68,7 @@ export default function App() {
               ? 'fantasy'
               : viewParam === 'results'
                 ? 'results'
-                : isHost
-                  ? 'host'
-                  : 'bidder';
+                : 'bidder';
 
     return {
       roomCode: roomParam,

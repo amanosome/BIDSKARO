@@ -6,7 +6,6 @@ import {
   Eye,
   EyeOff,
   Gavel,
-  History,
   Lock,
   Monitor,
   Pause,
@@ -106,25 +105,27 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
   const isLobbyLocked = room.status === 'lobby';
 
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => {
-    if (!canActAsHost && initialTab === 'host') return 'bidder';
+    if (initialTab === 'host' && (room.status === 'live' || !canActAsHost)) return 'bidder';
     return initialTab;
   });
   const [auctionClockSeconds, setAuctionClockSeconds] = useState(0);
   const [lastSeenSeason, setLastSeenSeason] = useState<number>(room.seasonNumber || 1);
 
   useEffect(() => {
-    if (room.status === 'completed') {
+    if (room.status === 'live' && activeTab === 'host') {
+      setActiveTab('bidder');
+    } else if (room.status === 'completed') {
       setActiveTab('results');
     }
-  }, [room.status]);
+  }, [room.status, activeTab]);
 
   useEffect(() => {
     const sNum = room.seasonNumber || 1;
     if (sNum > lastSeenSeason) {
       setLastSeenSeason(sNum);
-      setActiveTab(canActAsHost ? 'host' : 'bidder');
+      setActiveTab('bidder');
     }
-  }, [room.seasonNumber, lastSeenSeason, canActAsHost]);
+  }, [room.seasonNumber, lastSeenSeason]);
 
   useEffect(() => {
     const tick = () => {
@@ -275,7 +276,7 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
           room={room}
           remainingSeconds={remainingSeconds}
           connected={connected}
-          onExitTV={() => setActiveTab(canActAsHost ? 'host' : 'bidder')}
+          onExitTV={() => setActiveTab('bidder')}
         />
       </div>
     );
@@ -306,7 +307,7 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
 
           {/* Workspace View Tabs */}
           <nav className="flex items-center gap-1 overflow-x-auto">
-            {canActAsHost && (
+            {canActAsHost && room.status === 'lobby' && (
               <button
                 type="button"
                 onClick={() => setActiveTab('host')}
@@ -317,7 +318,7 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
                 }`}
               >
                 <Gavel className="w-3.5 h-3.5" />
-                <span>Host Console</span>
+                <span>Host Setup</span>
               </button>
             )}
             <button
@@ -330,7 +331,7 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
               }`}
             >
               <Smartphone className="w-3.5 h-3.5" />
-              <span>Mobile Bid</span>
+              <span>Live Auction</span>
             </button>
             <button
               type="button"
@@ -423,7 +424,7 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
               if (room.status === 'lobby') {
                 onSendCommand('start_auction', { playerId: room.currentPlayerId });
               }
-              setActiveTab('host');
+              setActiveTab('bidder');
             }}
           />
         )}
@@ -439,7 +440,6 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
             bidFeedback={bidFeedback}
             onClearFeedback={onClearFeedback}
             onSendCommand={onSendCommand}
-            onOpenHostControls={canActAsHost ? () => setActiveTab('host') : undefined}
             onPlaceBid={onPlaceBid}
             onLeaveRoom={() =>
               setConfirmModal({
@@ -462,13 +462,11 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
           />
         )}
 
-
-
         {activeTab === 'results' && (
           <AuctionResultsView room={room} onSendCommand={onSendCommand} />
         )}
 
-        {activeTab === 'host' && canActAsHost && (
+        {activeTab === 'host' && canActAsHost && room.status === 'lobby' && (
           <div className="space-y-6">
             {/* Top Action Strip */}
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-[#0D1526] px-4 py-3">
@@ -494,12 +492,6 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
                 ) : (
                   <span className="inline-flex items-center gap-1 rounded border border-sky-500/35 bg-sky-500/10 px-2 py-0.5 text-[11px] font-semibold text-sky-300">
                     Friends Invite Code
-                  </span>
-                )}
-                {room.status === 'live' && room.auctionEndDeadlineMs > 0 && (
-                  <span className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-mono-tabular font-semibold text-amber-300">
-                    <Clock className="w-3 h-3" />
-                    Duration Left: {formatClockMMSS(auctionClockSeconds)}
                   </span>
                 )}
               </div>
@@ -1157,25 +1149,6 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
                           {t.isLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
                           <span>{t.isLocked ? 'Locked' : 'Active'}</span>
                         </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Audit Event Log */}
-                <div className="rounded-2xl border border-slate-800 bg-[#0D1526] p-5 space-y-3">
-                  <div className="flex items-center gap-2 text-sm font-bold text-white">
-                    <History className="w-4 h-4 text-slate-400" />
-                    <span>Live Auction Event Log</span>
-                  </div>
-                  <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1">
-                    {room.eventLog.slice(0, 25).map((evt) => (
-                      <div key={evt.id} className="text-[11px] border-b border-slate-800/60 pb-1.5">
-                        <span className="font-mono-tabular text-slate-500">
-                          {new Date(evt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                        </span>
-                        <span className="mx-1.5 text-slate-600">·</span>
-                        <span className="text-slate-200">{evt.message}</span>
                       </div>
                     ))}
                   </div>
