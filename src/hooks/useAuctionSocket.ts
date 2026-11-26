@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuctionRoomState, BidRecord } from '../shared/auctionTypes';
+import {
+  dispatchLocalCommand,
+  getLocalRoom,
+  subscribeLocalRoom,
+} from '../services/localAuctionEngine';
 
 interface UseAuctionSocketOptions {
   roomCode: string | null;
@@ -25,39 +30,81 @@ export function useAuctionSocket(options: UseAuctionSocketOptions) {
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
+  const isLocalRef = useRef(false);
 
-  const fetchSnapshot = useCallback(async (code: string): Promise<boolean> => {
+  const handleEngineMessage = useCallback((msg: Record<string, unknown>) => {
+    if (msg.type === 'room_state') {
+      if (typeof msg.serverTimeMs === 'number') {
+        setClockOffsetMs(msg.serverTimeMs - Date.now());
+      }
+      setRoom(msg.room as AuctionRoomState);
+    } else if (msg.type === 'bid_rejected') {
+      setBidFeedback({
+        type: 'rejected',
+        message: (msg.reason as string) || 'Bid rejected by auction server.',
+        timestamp: Date.now(),
+      });
+    } else if (msg.type === 'bid_accepted') {
+      const bid = msg.bid as BidRecord;
+      setBidFeedback({
+        type: 'accepted',
+        message: `Bid accepted for ${bid.teamName}! Countdown reset.`,
+        timestamp: Date.now(),
+      });
+    } else if (msg.type === 'error') {
+      setBidFeedback({
+        type: 'rejected',
+        message: (msg.message as string) || 'Action rejected.',
+        timestamp: Date.now(),
+      });
+    }
+  }, []);
+
+  const fetchSnapshot = useCallback(async (code: string): Promise<'server' | 'local' | 'error'> => {
     setLoading(true);
     try {
       const res = await fetch(`/api/rooms/${encodeURIComponent(code)}`);
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || 'Auction room not found.');
+      const ct = res.headers.get('content-type') || '';
+      if (res.ok && ct.includes('application/json')) {
+        const data = await res.json();
+        if (data.serverTimeMs) {
+          setClockOffsetMs(data.serverTimeMs - Date.now());
+        }
+        setRoom(data.room);
+        setError(null);
+        isLocalRef.current = false;
+        return 'server';
       }
-      const data = await res.json();
-      if (data.serverTimeMs) {
-        setClockOffsetMs(data.serverTimeMs - Date.now());
-      }
-      setRoom(data.room);
-      setError(null);
-      return true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to load auction room.');
-      return false;
-    } finally {
-      setLoading(false);
+    } catch {
+      // fall through to local check
     }
+
+    const local = getLocalRoom(code);
+    if (local) {
+      setClockOffsetMs(local.serverTimeMs - Date.now());
+      setRoom(local.room);
+      setError(null);
+      isLocalRef.current = true;
+      setLoading(false);
+      return 'local';
+    }
+
+    setError('Auction room not found.');
+    setLoading(false);
+    return 'error';
   }, []);
 
   useEffect(() => {
     if (!roomCode) {
       setRoom(null);
       setConnected(false);
+      isLocalRef.current = false;
       return;
     }
 
     let disposed = false;
     let failedAttempts = 0;
+    let unsubscribeLocal: (() => void) | null = null;
 
     const connect = () => {
       if (disposed) return;
@@ -89,31 +136,7 @@ export function useAuctionSocket(options: UseAuctionSocketOptions) {
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          if (msg.type === 'room_state') {
-            if (typeof msg.serverTimeMs === 'number') {
-              setClockOffsetMs(msg.serverTimeMs - Date.now());
-            }
-            setRoom(msg.room);
-          } else if (msg.type === 'bid_rejected') {
-            setBidFeedback({
-              type: 'rejected',
-              message: msg.reason || 'Bid rejected by auction server.',
-              timestamp: Date.now(),
-            });
-          } else if (msg.type === 'bid_accepted') {
-            const bid = msg.bid as BidRecord;
-            setBidFeedback({
-              type: 'accepted',
-              message: `Bid accepted for ${bid.teamName}! Countdown reset.`,
-              timestamp: Date.now(),
-            });
-          } else if (msg.type === 'error') {
-            setBidFeedback({
-              type: 'rejected',
-              message: msg.message || 'Action rejected.',
-              timestamp: Date.now(),
-            });
-          }
+          handleEngineMessage(msg);
         } catch {
           // ignore malformed messages
         }
@@ -132,8 +155,19 @@ export function useAuctionSocket(options: UseAuctionSocketOptions) {
       };
     };
 
-    fetchSnapshot(roomCode).then((ok) => {
-      if (!disposed && ok) connect();
+    fetchSnapshot(roomCode).then((mode) => {
+      if (disposed) return;
+      setLoading(false);
+      if (mode === 'server') {
+        connect();
+      } else if (mode === 'local') {
+        setConnected(true);
+        unsubscribeLocal = subscribeLocalRoom(
+          roomCode,
+          { participantId, name: participantName, role, teamId },
+          handleEngineMessage
+        );
+      }
     });
 
     return () => {
@@ -141,8 +175,9 @@ export function useAuctionSocket(options: UseAuctionSocketOptions) {
       if (reconnectTimerRef.current) window.clearTimeout(reconnectTimerRef.current);
       wsRef.current?.close();
       wsRef.current = null;
+      unsubscribeLocal?.();
     };
-  }, [roomCode, participantId, participantName, role, teamId, fetchSnapshot]);
+  }, [roomCode, participantId, participantName, role, teamId, fetchSnapshot, handleEngineMessage]);
 
   // Authoritative synchronized countdown ticker
   useEffect(() => {
@@ -171,6 +206,15 @@ export function useAuctionSocket(options: UseAuctionSocketOptions) {
 
   const sendCommand = useCallback(
     (type: string, payload: Record<string, unknown> = {}) => {
+      if (isLocalRef.current && roomCode) {
+        return dispatchLocalCommand(
+          roomCode,
+          participantId,
+          type,
+          { ...payload, asHost: role === 'host' },
+          handleEngineMessage
+        );
+      }
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
         setBidFeedback({
           type: 'rejected',
@@ -190,7 +234,7 @@ export function useAuctionSocket(options: UseAuctionSocketOptions) {
       );
       return true;
     },
-    [roomCode, participantId, role]
+    [roomCode, participantId, role, handleEngineMessage]
   );
 
   const placeBid = useCallback(

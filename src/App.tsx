@@ -7,6 +7,7 @@ import { CreateRoomModal } from './components/CreateRoomModal';
 import { AuthModal } from './components/AuthModal';
 import { OfflineIndicator } from './components/PWAInstallButton';
 import { getAuthToken, logoutAuth } from './services/authService';
+import { joinLocalRoom } from './services/localAuctionEngine';
 
 interface ActiveSession {
   roomCode: string;
@@ -133,25 +134,54 @@ export default function App() {
     setJoinStatusError(null);
     const pid = getOrCreateClientId();
     try {
-      const res = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/join`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          participantId: pid,
-          name,
-          role: mode === 'tv' ? 'spectator' : mode,
-          teamId,
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Room ${roomCode} not found.`);
+      let joinedViaServer = false;
+      try {
+        const res = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/join`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            participantId: pid,
+            name,
+            role: mode === 'tv' ? 'spectator' : mode,
+            teamId,
+          }),
+        });
+        const ct = res.headers.get('content-type') || '';
+        if (res.ok && ct.includes('application/json')) {
+          joinedViaServer = true;
+        } else if (res.status !== 404 && res.status !== 405 && res.status !== 501 && ct.includes('application/json')) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || `Room ${roomCode} not found.`);
+        }
+      } catch (fetchErr) {
+        const isNetworkError =
+          fetchErr instanceof TypeError ||
+          (fetchErr instanceof Error &&
+            (fetchErr.message === 'Failed to fetch' ||
+              fetchErr.message === 'Load failed' ||
+              fetchErr.message.includes('NetworkError')));
+        if (!isNetworkError) {
+          throw fetchErr;
+        }
       }
+
       let storedHostId: string | null = null;
       try {
         storedHostId = localStorage.getItem(`bidskaro_host_${roomCode}`);
       } catch {
         storedHostId = null;
+      }
+
+      if (!joinedViaServer) {
+        const localJoined = joinLocalRoom(roomCode, {
+          participantId: storedHostId || pid,
+          name,
+          role: storedHostId ? 'host' : mode === 'tv' ? 'spectator' : mode,
+          teamId,
+        });
+        if (!localJoined) {
+          throw new Error(`Room ${roomCode} not found.`);
+        }
       }
 
       setSession({

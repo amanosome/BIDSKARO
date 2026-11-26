@@ -4,6 +4,7 @@ import { BiddingStyle, BuildingMode, CurrencyCode, LeagueId, PlayMode, RoleQuota
 import { CRORE, LAKH } from '../shared/currency';
 import { computeDefaultRoleQuotas, computeScaledBasePrice } from '../shared/rulesEngine';
 import { DEMO_FIVE_TEAMS, getLeagueById, LEAGUES } from '../data/leagues';
+import { createLocalRoom } from '../services/localAuctionEngine';
 
 interface CreateRoomModalProps {
   initialLeagueId?: LeagueId;
@@ -111,75 +112,98 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
     setSubmitting(true);
     setError(null);
     const hostId = `host-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const payload = {
+      roomName,
+      leagueId,
+      seasonYear,
+      hostId,
+      hostName,
+      rules: {
+        currency,
+        buildingMode,
+        biddingStyle,
+        playMode,
+        stackMode,
+        matchesPerTeamPerSeason,
+        standardRetentionLimit: 4,
+        runnerUpRetentionLimit: 5,
+        championRetentionLimit: 6,
+        defaultTeamPurse: purseCrores * CRORE,
+        maxTeamPurse: Math.max(200, purseCrores) * CRORE,
+        initialTimerSeconds: initialTimer,
+        resetTimerSeconds: resetTimer,
+        maxAuctionDurationMinutes: maxDurationMinutes,
+        minSquadSize: minSquad,
+        maxSquadSize: maxSquad,
+        playingXISize: Math.min(11, minSquad),
+        roleQuotas,
+        aiOpponentsEnabled: playMode === 'ai' ? aiOpponentsEnabled : false,
+        allBiddersCanHost,
+        hostCanBid: true,
+        allowCustomBid,
+        allowQuickBid,
+        tournamentMode,
+        marqueeMarkupPercent,
+        categoryOverrides: [
+          { category: 'Marquee' as const, minIncrement: catIncMarquee * LAKH },
+          { category: 'Capped Batter' as const, minIncrement: catIncCappedBatter * LAKH },
+          { category: 'Capped Bowler' as const, minIncrement: catIncCappedBowler * LAKH },
+          { category: 'Capped All-Rounder' as const, minIncrement: catIncCappedAllRounder * LAKH },
+          { category: 'Wicketkeeper' as const, minIncrement: catIncWicketkeeper * LAKH },
+          { category: 'Uncapped' as const, minIncrement: catIncUncapped * LAKH },
+        ].filter((c) => c.minIncrement > 0),
+        incrementTable: [
+          { id: 'tier-1', minBid: 0, maxBid: 50 * LAKH, increment: minIncrementLakhs * LAKH },
+          { id: 'tier-2', minBid: 50 * LAKH, maxBid: 1 * CRORE, increment: minIncrementLakhs * LAKH },
+          { id: 'tier-3', minBid: 1 * CRORE, maxBid: 5 * CRORE, increment: 25 * LAKH },
+          { id: 'tier-4', minBid: 5 * CRORE, maxBid: 10 * CRORE, increment: 50 * LAKH },
+          { id: 'tier-5', minBid: 10 * CRORE, maxBid: null, increment: 1 * CRORE },
+        ],
+      },
+      teams: teams.map((t, idx) => ({
+        id: `team-${idx + 1}`,
+        name: t.name,
+        shortCode: t.shortCode,
+        primaryColor: t.primaryColor,
+        secondaryColor: t.secondaryColor,
+        ownerName: t.ownerName,
+        initialPurse: t.purseCrores * CRORE,
+      })),
+    };
+
     try {
-      const res = await fetch('/api/rooms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          roomName,
-          leagueId,
-          seasonYear,
-          hostId,
-          hostName,
-          rules: {
-            currency,
-            buildingMode,
-            biddingStyle,
-            playMode,
-            stackMode,
-            matchesPerTeamPerSeason,
-            standardRetentionLimit: 4,
-            runnerUpRetentionLimit: 5,
-            championRetentionLimit: 6,
-            defaultTeamPurse: purseCrores * CRORE,
-            maxTeamPurse: Math.max(200, purseCrores) * CRORE,
-            initialTimerSeconds: initialTimer,
-            resetTimerSeconds: resetTimer,
-            maxAuctionDurationMinutes: maxDurationMinutes,
-            minSquadSize: minSquad,
-            maxSquadSize: maxSquad,
-            playingXISize: Math.min(11, minSquad),
-            roleQuotas,
-            aiOpponentsEnabled: playMode === 'ai' ? aiOpponentsEnabled : false,
-            allBiddersCanHost,
-            hostCanBid: true,
-            allowCustomBid,
-            allowQuickBid,
-            tournamentMode,
-            marqueeMarkupPercent,
-            categoryOverrides: [
-              { category: 'Marquee', minIncrement: catIncMarquee * LAKH },
-              { category: 'Capped Batter', minIncrement: catIncCappedBatter * LAKH },
-              { category: 'Capped Bowler', minIncrement: catIncCappedBowler * LAKH },
-              { category: 'Capped All-Rounder', minIncrement: catIncCappedAllRounder * LAKH },
-              { category: 'Wicketkeeper', minIncrement: catIncWicketkeeper * LAKH },
-              { category: 'Uncapped', minIncrement: catIncUncapped * LAKH },
-            ].filter((c) => c.minIncrement > 0),
-            incrementTable: [
-              { id: 'tier-1', minBid: 0, maxBid: 50 * LAKH, increment: minIncrementLakhs * LAKH },
-              { id: 'tier-2', minBid: 50 * LAKH, maxBid: 1 * CRORE, increment: minIncrementLakhs * LAKH },
-              { id: 'tier-3', minBid: 1 * CRORE, maxBid: 5 * CRORE, increment: 25 * LAKH },
-              { id: 'tier-4', minBid: 5 * CRORE, maxBid: 10 * CRORE, increment: 50 * LAKH },
-              { id: 'tier-5', minBid: 10 * CRORE, maxBid: null, increment: 1 * CRORE },
-            ],
-          },
-          teams: teams.map((t, idx) => ({
-            id: `team-${idx + 1}`,
-            name: t.name,
-            shortCode: t.shortCode,
-            primaryColor: t.primaryColor,
-            secondaryColor: t.secondaryColor,
-            ownerName: t.ownerName,
-            initialPurse: t.purseCrores * CRORE,
-          })),
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || 'Could not create room.');
+      let createdCode: string | null = null;
+      try {
+        const res = await fetch('/api/rooms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const ct = res.headers.get('content-type') || '';
+        if (res.ok && ct.includes('application/json')) {
+          const data = await res.json();
+          createdCode = data.room.roomCode;
+        } else if (res.status >= 400 && res.status !== 404 && res.status !== 405 && res.status !== 501 && ct.includes('application/json')) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || 'Could not create room.');
+        }
+      } catch (fetchErr) {
+        const isNetworkError =
+          fetchErr instanceof TypeError ||
+          (fetchErr instanceof Error &&
+            (fetchErr.message === 'Failed to fetch' ||
+              fetchErr.message === 'Load failed' ||
+              fetchErr.message.includes('NetworkError')));
+        if (!isNetworkError) {
+          throw fetchErr;
+        }
       }
-      const data = await res.json();
-      onCreated(data.room.roomCode, hostId, hostName);
+
+      if (!createdCode) {
+        const localRes = createLocalRoom(payload);
+        createdCode = localRes.room.roomCode;
+      }
+      onCreated(createdCode, hostId, hostName);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create auction room.');
     } finally {
