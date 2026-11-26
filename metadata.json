@@ -1,0 +1,8 @@
+{
+  "name": "Remix BidsKaro",
+  "description": "Bid Smart. Build Your Team. Professional live cricket franchise auction platform for IPL, WPL, SA20, BBL, and custom leagues with real-time bidding, configurable purse \u0026 increment rules, QR room joining, and broadcast display.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
