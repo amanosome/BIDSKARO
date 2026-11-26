@@ -117,17 +117,7 @@ export default function App() {
     }
   }, [session]);
 
-  const handleLaunchDemo = (tab: 'host' | 'bidder' | 'tv' = 'host') => {
-    setJoinStatusError(null);
-    setSession({
-      roomCode: 'DEMO5',
-      participantId: 'host-demo',
-      participantName: authUser?.name || 'Demo Auctioneer',
-      role: 'host',
-      teamId: 'team-mumbai',
-      initialTab: tab,
-    });
-  };
+
 
   const handleResetDemo = async () => {
     await fetch('/api/rooms/DEMO5/reset', { method: 'POST' });
@@ -213,7 +203,6 @@ export default function App() {
             authUser={authUser}
             onOpenAuth={(mode = 'login') => setAuthModal({ open: true, mode })}
             onLogout={handleLogout}
-            onLaunchDemo={handleLaunchDemo}
             onOpenCreateRoom={(leagueId, seasonYear, playMode) =>
               setCreateModal({ open: true, leagueId, seasonYear, playMode })
             }

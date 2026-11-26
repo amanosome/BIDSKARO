@@ -5,9 +5,7 @@ import {
   Lock,
   LogOut,
   Monitor,
-  Play,
   ShieldCheck,
-  Smartphone,
   Tv,
   Users,
 } from 'lucide-react';
@@ -23,7 +21,6 @@ interface LandingPageProps {
   authUser: AuthUserPublic | null;
   onOpenAuth: (mode?: 'login' | 'register' | 'owner') => void;
   onLogout: () => void;
-  onLaunchDemo: (tab?: 'host' | 'bidder' | 'tv') => void;
   onOpenCreateRoom: (leagueId?: LeagueId, seasonYear?: string, playMode?: PlayMode) => void;
   onJoinRoom: (roomCode: string, role: 'bidder' | 'spectator' | 'tv', name: string, teamId?: string) => void;
 }
@@ -32,13 +29,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   authUser,
   onOpenAuth,
   onLogout,
-  onLaunchDemo,
   onOpenCreateRoom,
   onJoinRoom,
 }) => {
   const [sportFilter, setSportFilter] = useState<'all' | SportType>('all');
   const [selectedLeagueId, setSelectedLeagueId] = useState<LeagueId>('IPL');
-  const [tvInviteCode, setTvInviteCode] = useState<string>('DEMO5');
+  const [tvInviteCode, setTvInviteCode] = useState<string>('');
   const activeLeague = useMemo(
     () => LEAGUES.find((l) => l.id === selectedLeagueId) || LEAGUES[0],
     [selectedLeagueId]
@@ -49,7 +45,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     [activeLeague, selectedYear]
   );
 
-  const [joinCode, setJoinCode] = useState('DEMO5');
+  const [joinCode, setJoinCode] = useState('');
   const [joinName, setJoinName] = useState(authUser?.name || 'Franchise Owner');
   const [joinMode, setJoinMode] = useState<'bidder' | 'tv' | 'spectator'>('bidder');
   const [joinError, setJoinError] = useState<string | null>(null);
@@ -83,7 +79,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     e.preventDefault();
     const code = joinCode.trim().toUpperCase();
     if (!code) {
-      setJoinError('Enter a valid 5–6 character room code (e.g., DEMO5).');
+      setJoinError('Enter a valid 5–6 character room code.');
       return;
     }
     setJoinError(null);
@@ -142,10 +138,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
             <button
               type="button"
-              onClick={() => onLaunchDemo('host')}
+              onClick={() => onOpenCreateRoom('IPL', '2025', 'friends')}
               className="rounded-lg bg-emerald-500 px-3.5 py-2 text-xs sm:text-sm font-bold text-slate-950 hover:bg-emerald-400 transition-colors whitespace-nowrap shrink-0"
             >
-              Launch 5-Team Demo
+              Create Auction Room
             </button>
           </div>
         </div>
@@ -194,15 +190,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 <span>Play Solo with AI</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => onLaunchDemo('host')}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-[#0D1526]/90 px-4 py-3.5 text-sm font-semibold text-white hover:border-emerald-500/50 transition-colors"
-              >
-                <Play className="w-4 h-4 fill-current text-emerald-400" />
-                <span>5-Team Demo (₹200 Cr)</span>
-              </button>
-
               <PWAInstallButton variant="full" />
             </div>
 
@@ -228,7 +215,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               />
               <div className="absolute inset-0 bg-gradient-to-t from-[#0D1526] via-transparent to-transparent" />
               <div className="absolute bottom-3 left-5 text-xs font-semibold text-amber-300">
-                5-Team Live &amp; AI Simulation · Room DEMO5
+                Live Franchise Purse Showcase · ₹200 Cr
               </div>
             </div>
             <div className="p-5 space-y-4">
@@ -255,19 +242,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <div className="grid grid-cols-2 gap-2.5 pt-1">
                 <button
                   type="button"
-                  onClick={() => onLaunchDemo('bidder')}
+                  onClick={() => onOpenCreateRoom('IPL', '2025', 'friends')}
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-[#060B18] py-2.5 text-xs font-semibold text-slate-200 hover:border-emerald-500/50"
                 >
-                  <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Open Bidder + AI</span>
+                  <Users className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Friends Room</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => onLaunchDemo('tv')}
+                  onClick={() => onOpenCreateRoom('IPL', '2025', 'ai')}
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-[#060B18] py-2.5 text-xs font-semibold text-slate-200 hover:border-amber-500/50"
                 >
-                  <Monitor className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Open Big Screen TV</span>
+                  <Gavel className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Solo vs AI</span>
                 </button>
               </div>
             </div>
@@ -296,7 +283,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               required
               value={tvInviteCode}
               onChange={(e) => setTvInviteCode(e.target.value.toUpperCase())}
-              placeholder="Invite Code (e.g. DEMO5)"
+              placeholder="Enter Invite Code"
               className="flex-1 rounded-xl border border-slate-700 bg-[#060B18] px-4 py-3 text-base font-mono-tabular font-bold text-amber-300 uppercase tracking-wider focus:border-amber-400 focus:outline-none"
             />
             <button
@@ -500,7 +487,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               Join a Live Auction Room by Code
             </h2>
             <p className="text-sm text-slate-300 leading-relaxed">
-              Enter a room code shared by your auction host (try <strong className="font-mono-tabular text-emerald-400">DEMO5</strong> for the live 5-team simulation). Every Team Bidder also shares Host controls, and solo players compete directly against AI Franchise Directors.
+              Enter a room code shared by your auction host to join live bidding. Every Team Bidder also shares Host controls, and solo players compete directly against AI Franchise Directors.
             </p>
           </div>
 
@@ -513,7 +500,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                   required
                   value={joinCode}
                   onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                  placeholder="DEMO5"
+                  placeholder="Enter Room Code"
                   className="w-full rounded-lg border border-slate-700 bg-[#060B18] px-3.5 py-2.5 text-sm font-mono-tabular font-bold text-emerald-300 uppercase"
                 />
               </div>
@@ -586,9 +573,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 Email Sign In
               </button>
             )}
-            <button type="button" onClick={() => onLaunchDemo('host')} className="text-emerald-400 hover:underline">
-              5-Team Demo
-            </button>
           </div>
         </div>
       </footer>
