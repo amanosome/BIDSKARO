@@ -5,16 +5,18 @@ import {
   Check,
   CheckCircle2,
   Clock,
+  Copy,
   Cpu,
   Gavel,
   Layers,
   Lock,
+  Monitor,
   Pause,
   Play,
+  QrCode,
   RotateCcw,
   Star,
   Trophy,
-  Users,
   Zap,
 } from 'lucide-react';
 import { AuctionPlayer, AuctionRoomState, PlayerRole } from '../shared/auctionTypes';
@@ -47,6 +49,8 @@ interface MobileBidderViewProps {
   onSelectTeam?: (teamId: string) => void;
   onSendCommand?: (type: string, payload?: Record<string, unknown>) => boolean;
   onOpenHostControls?: () => void;
+  onOpenInvite?: () => void;
+  onOpenTV?: () => void;
   onPlaceBid: (params: {
     teamId: string;
     amount: number;
@@ -107,6 +111,8 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
   onClearFeedback,
   onSelectTeam,
   onSendCommand,
+  onOpenInvite,
+  onOpenTV,
   onPlaceBid,
 }) => {
   const [activeTeamId, setActiveTeamId] = useState<string>(
@@ -118,6 +124,17 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
   const [mobileTab, setMobileTab] = useState<'bid' | 'player' | 'summary' | 'stack'>('bid');
   const [auctionClockSeconds, setAuctionClockSeconds] = useState<number>(0);
   const [portraitLoadFailed, setPortraitLoadFailed] = useState<boolean>(false);
+  const [copiedKey, setCopiedKey] = useState<'room' | 'tv' | null>(null);
+
+  const handleCopyCode = async (value: string, key: 'room' | 'tv') => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedKey(key);
+      window.setTimeout(() => setCopiedKey(null), 1600);
+    } catch {
+      // ignore clipboard errors
+    }
+  };
 
   const canActAsHost = isHost || Boolean(room.rules.allBiddersCanHost);
   const isAiDuelMode = room.rules.playMode === 'ai' && room.rules.aiOpponentsEnabled;
@@ -432,6 +449,7 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Limited Host Live Controls: Pause / Resume + Room Invite Code + TV Screen Invite Code */}
             {canActAsHost && room.status === 'live' && onSendCommand && (
               <>
                 {room.lotStatus === 'bidding' ? (
@@ -454,6 +472,48 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
                   </button>
                 ) : null}
               </>
+            )}
+
+            {/* Always-Visible Room Invite Code & TV Big Screen Code */}
+            <button
+              type="button"
+              onClick={() => handleCopyCode(room.roomCode, 'room')}
+              title="Copy Room Invite Code"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/35 bg-emerald-500/10 px-3 py-2 text-xs font-mono-tabular font-bold text-emerald-300 hover:bg-emerald-500/20 min-h-[40px] whitespace-nowrap shrink-0"
+            >
+              {copiedKey === 'room' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>Invite: {room.roomCode}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenInvite) {
+                  onOpenInvite();
+                } else {
+                  const baseUrl =
+                    typeof window !== 'undefined'
+                      ? `${window.location.origin}${window.location.pathname}`
+                      : '';
+                  handleCopyCode(`${baseUrl}?room=${encodeURIComponent(room.roomCode)}&view=tv`, 'tv');
+                }
+              }}
+              title="View or Copy Big Screen TV Invite Code"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs font-mono-tabular font-bold text-amber-300 hover:bg-amber-500/20 min-h-[40px] whitespace-nowrap shrink-0"
+            >
+              <Monitor className="w-3.5 h-3.5" />
+              <span>{copiedKey === 'tv' ? 'TV Link Copied' : `TV Code: ${room.roomCode}`}</span>
+            </button>
+
+            {onOpenTV && (
+              <button
+                type="button"
+                onClick={onOpenTV}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-[#060B18] px-3 py-2 text-xs font-semibold text-slate-200 hover:border-amber-400/50 min-h-[40px] whitespace-nowrap shrink-0"
+              >
+                <QrCode className="w-3.5 h-3.5 text-amber-300" />
+                <span>Open TV</span>
+              </button>
             )}
 
             {(canActAsHost || !assignedTeamId) && !isAiDuelMode && (
@@ -637,17 +697,18 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
                 </div>
               </div>
 
-              {/* Bottom Player Identity + Rating Card + CTA */}
-              <div className="relative z-10 px-5 pb-5 pt-2 space-y-4">
+              {/* Bottom Player Identity + Complete Original Career Stats + Rating Card + CTA */}
+              <div className="relative z-10 px-5 pb-5 pt-2 space-y-3.5">
                 <div className="flex items-end justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <h2 className="text-2xl sm:text-3xl font-display font-extrabold text-white leading-tight break-words">
                       {currentPlayer ? currentPlayer.name : 'Standby'}
                     </h2>
                     {currentPlayer && (
-                      <p className="mt-1.5 text-xs text-slate-300 leading-relaxed line-clamp-2">
-                        {currentPlayer.country} · {currentPlayer.role} · {currentPlayer.battingStyle} · Base{' '}
-                        <span className="font-mono-tabular text-white font-semibold">
+                      <p className="mt-1 text-xs text-slate-200 leading-relaxed">
+                        {currentPlayer.country} · {currentPlayer.role} · {currentPlayer.battingStyle}
+                        {currentPlayer.bowlingStyle ? ` · ${currentPlayer.bowlingStyle}` : ''} · Base{' '}
+                        <span className="font-mono-tabular text-amber-300 font-semibold">
                           {formatShortCurrency(currentPlayer.basePrice, room.rules.currency)}
                         </span>
                       </p>
@@ -674,10 +735,90 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
                   )}
                 </div>
 
+                {/* Full Original Career Stats Panel inside Player Showcase */}
+                {currentPlayer && (
+                  <div className="rounded-2xl border border-white/15 bg-[#060B18]/90 backdrop-blur-md p-3 space-y-2">
+                    <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                      <span>Original Career Stats</span>
+                      {currentPlayer.historicalPeakPrice && (
+                        <span className="text-amber-300 font-mono-tabular truncate ml-2">
+                          Peak {currentPlayer.historicalPeakPrice}
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5 font-mono-tabular text-[11px]">
+                      <div className="rounded-lg bg-white/5 px-2 py-1.5">
+                        <div className="text-[9px] text-slate-400">MATCHES</div>
+                        <div className="font-bold text-white">{currentPlayer.stats.matches}</div>
+                      </div>
+                      <div className="rounded-lg bg-white/5 px-2 py-1.5">
+                        <div className="text-[9px] text-slate-400">
+                          {currentPlayer.sport === 'football' ? 'GOALS' : 'RUNS'}
+                        </div>
+                        <div className="font-bold text-white">{currentPlayer.stats.runs}</div>
+                      </div>
+                      <div className="rounded-lg bg-white/5 px-2 py-1.5">
+                        <div className="text-[9px] text-slate-400">
+                          {currentPlayer.sport === 'football' ? 'ASSISTS' : 'AVERAGE'}
+                        </div>
+                        <div className="font-bold text-white">{currentPlayer.stats.average}</div>
+                      </div>
+                      <div className="rounded-lg bg-white/5 px-2 py-1.5">
+                        <div className="text-[9px] text-slate-400">
+                          {currentPlayer.sport === 'football' ? 'xG INDEX' : 'STRIKE RATE'}
+                        </div>
+                        <div className="font-bold text-emerald-400">{currentPlayer.stats.strikeRate}</div>
+                      </div>
+                      <div className="rounded-lg bg-white/5 px-2 py-1.5">
+                        <div className="text-[9px] text-slate-400">
+                          {currentPlayer.sport === 'football' ? 'BEST' : 'HIGHEST'}
+                        </div>
+                        <div className="font-bold text-white">{currentPlayer.stats.highestScore}</div>
+                      </div>
+                      <div className="rounded-lg bg-white/5 px-2 py-1.5">
+                        <div className="text-[9px] text-slate-400">
+                          {currentPlayer.sport === 'football' ? 'MILESTONES' : '50s / 100s'}
+                        </div>
+                        <div className="font-bold text-white">{currentPlayer.stats.fiftiesHundreds}</div>
+                      </div>
+                      <div className="rounded-lg bg-white/5 px-2 py-1.5">
+                        <div className="text-[9px] text-slate-400">
+                          {currentPlayer.sport === 'football' ? 'CLEAN SHEETS' : 'WICKETS'}
+                        </div>
+                        <div className="font-bold text-white">{currentPlayer.stats.wickets}</div>
+                      </div>
+                      <div className="rounded-lg bg-white/5 px-2 py-1.5">
+                        <div className="text-[9px] text-slate-400">
+                          {currentPlayer.sport === 'football' ? 'RATING / 90' : 'ECONOMY'}
+                        </div>
+                        <div className="font-bold text-amber-300">{currentPlayer.stats.economy || '—'}</div>
+                      </div>
+                      <div className="rounded-lg bg-white/5 px-2 py-1.5">
+                        <div className="text-[9px] text-slate-400">
+                          {currentPlayer.sport === 'football' ? 'BEST REC' : 'BEST BWL'}
+                        </div>
+                        <div className="font-bold text-white truncate">{currentPlayer.stats.bestBowling || '—'}</div>
+                      </div>
+                    </div>
+                    {(currentPlayer.seasonsActive.length > 0 || currentPlayer.historicalNote) && (
+                      <div className="pt-1 border-t border-white/10 text-[10px] text-slate-300 leading-snug space-y-0.5">
+                        {currentPlayer.seasonsActive.length > 0 && (
+                          <div className="font-mono-tabular text-slate-400">
+                            Seasons: <span className="text-slate-200">{currentPlayer.seasonsActive.join(', ')}</span>
+                          </div>
+                        )}
+                        {currentPlayer.historicalNote && (
+                          <p className="text-slate-300">{currentPlayer.historicalNote}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <button
                   type="button"
                   onClick={() => {
-                    setMobileTab('summary');
+                    setMobileTab('stack');
                     const el = document.getElementById('my-squad-stack-section');
                     el?.scrollIntoView({ behavior: 'smooth' });
                   }}
@@ -785,6 +926,76 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Original Career Stats Visible Directly During Live Bidding */}
+              {currentPlayer && (
+                <div className="rounded-2xl border border-slate-800 bg-[#0E172A] p-3 space-y-2">
+                  <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    <span>Original Player Stats · {currentPlayer.category}</span>
+                    <span className="font-mono-tabular text-emerald-400">MVP {currentPlayer.rating}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5 font-mono-tabular text-[11px]">
+                    <div className="rounded-lg border border-slate-800 bg-[#060B18] px-2 py-1.5">
+                      <div className="text-[9px] text-slate-400">MATCHES</div>
+                      <div className="font-bold text-white">{currentPlayer.stats.matches}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-[#060B18] px-2 py-1.5">
+                      <div className="text-[9px] text-slate-400">
+                        {currentPlayer.sport === 'football' ? 'GOALS' : 'RUNS'}
+                      </div>
+                      <div className="font-bold text-white">{currentPlayer.stats.runs}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-[#060B18] px-2 py-1.5">
+                      <div className="text-[9px] text-slate-400">
+                        {currentPlayer.sport === 'football' ? 'ASSISTS' : 'AVG'}
+                      </div>
+                      <div className="font-bold text-white">{currentPlayer.stats.average}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-[#060B18] px-2 py-1.5">
+                      <div className="text-[9px] text-slate-400">
+                        {currentPlayer.sport === 'football' ? 'xG' : 'SR'}
+                      </div>
+                      <div className="font-bold text-emerald-400">{currentPlayer.stats.strikeRate}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-[#060B18] px-2 py-1.5">
+                      <div className="text-[9px] text-slate-400">
+                        {currentPlayer.sport === 'football' ? 'BEST' : 'HS'}
+                      </div>
+                      <div className="font-bold text-white">{currentPlayer.stats.highestScore}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-[#060B18] px-2 py-1.5">
+                      <div className="text-[9px] text-slate-400">
+                        {currentPlayer.sport === 'football' ? 'MILESTONES' : '50/100'}
+                      </div>
+                      <div className="font-bold text-white">{currentPlayer.stats.fiftiesHundreds}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-[#060B18] px-2 py-1.5">
+                      <div className="text-[9px] text-slate-400">
+                        {currentPlayer.sport === 'football' ? 'CS' : 'WKTS'}
+                      </div>
+                      <div className="font-bold text-white">{currentPlayer.stats.wickets}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-[#060B18] px-2 py-1.5">
+                      <div className="text-[9px] text-slate-400">
+                        {currentPlayer.sport === 'football' ? 'RTG/90' : 'ECON'}
+                      </div>
+                      <div className="font-bold text-amber-300">{currentPlayer.stats.economy || '—'}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-[#060B18] px-2 py-1.5">
+                      <div className="text-[9px] text-slate-400">
+                        {currentPlayer.sport === 'football' ? 'RECORD' : 'BEST'}
+                      </div>
+                      <div className="font-bold text-white truncate">{currentPlayer.stats.bestBowling || '—'}</div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-1 text-[10px] text-slate-400 pt-0.5">
+                    <span>{currentPlayer.battingStyle}{currentPlayer.bowlingStyle ? ` · ${currentPlayer.bowlingStyle}` : ''}</span>
+                    {currentPlayer.historicalPeakPrice && (
+                      <span className="text-amber-300 font-mono-tabular">Peak: {currentPlayer.historicalPeakPrice}</span>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Feedback Banner */}
               {(localError || bidFeedback) && (
@@ -1153,6 +1364,9 @@ export const MobileBidderView: React.FC<MobileBidderViewProps> = ({
                       </div>
                       <div className="text-[11px] text-slate-400 font-mono-tabular">
                         {p.role} · {formatShortCurrency(p.soldPrice || p.basePrice, room.rules.currency)}
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-mono-tabular mt-0.5">
+                        M:{p.stats.matches} · {p.sport === 'football' ? 'G' : 'R'}:{p.stats.runs} · SR:{p.stats.strikeRate} · {p.sport === 'football' ? 'CS' : 'W'}:{p.stats.wickets}
                       </div>
                     </div>
                     {onSendCommand && (

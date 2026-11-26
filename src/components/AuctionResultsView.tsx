@@ -42,7 +42,7 @@ export const AuctionResultsView: React.FC<AuctionResultsViewProps> = ({ room, on
   const shareText = room
     ? `BidsKaro Auction Results — ${room.roomName} (${room.leagueId} ${room.seasonYear}): ${soldPlayers.length} players sold${
         topBuy ? `, Top Buy: ${topBuy.name} (${formatCurrency(topBuy.soldPrice || 0, room.rules.currency)} to ${topBuy.soldToTeamName})` : ''
-      }. Join Room ${room.roomCode}: ${window.location.origin}/?room=${room.roomCode}`
+      }. Join Room ${room.roomCode}: ${window.location.origin}${window.location.pathname}?room=${room.roomCode}`
     : 'BidsKaro — Bid Smart. Build Your Team. Check out the live cricket auction leaderboard!';
 
   const handleShare = async () => {
@@ -231,7 +231,9 @@ export const AuctionResultsView: React.FC<AuctionResultsViewProps> = ({ room, on
                                 {isC && <span className="text-[10px] text-amber-300 font-bold">(C)</span>}
                                 {isVC && <span className="text-[10px] text-emerald-300 font-bold">(VC)</span>}
                               </div>
-                              <span className="text-[10px] text-slate-400">{p.role}</span>
+                              <span className="text-[10px] text-slate-400 font-mono-tabular">
+                                {p.role} · M:{p.stats.matches} · {p.sport === 'football' ? 'G' : 'R'}:{p.stats.runs} · SR:{p.stats.strikeRate} · {p.sport === 'football' ? 'CS' : 'W'}:{p.stats.wickets}
+                              </span>
                             </div>
                             <span className="font-mono-tabular font-semibold text-amber-300 shrink-0">
                               {formatShortCurrency(p.soldPrice || 0, room.rules.currency)}

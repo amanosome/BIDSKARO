@@ -12,11 +12,12 @@ export const QRInviteModal: React.FC<QRInviteModalProps> = ({ room, onClose }) =
   const [selectedTeamId, setSelectedTeamId] = useState<string>(room.teams[0]?.id || '');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const mobileJoinUrl = `${origin}/?room=${encodeURIComponent(room.roomCode)}&view=bidder${
+  const baseUrl =
+    typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}` : '';
+  const mobileJoinUrl = `${baseUrl}?room=${encodeURIComponent(room.roomCode)}&view=bidder${
     selectedTeamId ? `&team=${encodeURIComponent(selectedTeamId)}` : ''
   }`;
-  const bigScreenUrl = `${origin}/?room=${encodeURIComponent(room.roomCode)}&view=tv`;
+  const bigScreenUrl = `${baseUrl}?room=${encodeURIComponent(room.roomCode)}&view=tv`;
 
   const copyText = async (text: string, key: string) => {
     try {
@@ -34,10 +35,10 @@ export const QRInviteModal: React.FC<QRInviteModalProps> = ({ room, onClose }) =
         <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
           <div>
             <h2 className="text-lg font-display font-bold text-white">
-              BidsKaro Room Invitations &amp; QR Join
+              BidsKaro Invite Codes &amp; Big Screen TV Join
             </h2>
             <p className="text-xs text-slate-400">
-              Room Code: <span className="font-mono-tabular font-bold text-emerald-400">{room.roomCode}</span> · Scan from any phone to join immediately
+              Share the Room Invite Code or TV / Big Screen Code below to join immediately.
             </p>
           </div>
           <button
@@ -47,6 +48,47 @@ export const QRInviteModal: React.FC<QRInviteModalProps> = ({ room, onClose }) =
           >
             <X className="w-5 h-5" />
           </button>
+        </div>
+
+        {/* Highlighted Room & TV / Big Screen Invite Codes */}
+        <div className="px-6 pt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="rounded-xl border border-emerald-500/35 bg-[#060B18] px-4 py-3 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                Room Invite Code (Friends)
+              </div>
+              <div className="mt-0.5 text-xl font-mono-tabular font-extrabold text-emerald-400 tracking-wider">
+                {room.roomCode}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => copyText(room.roomCode, 'room-code')}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 shrink-0"
+            >
+              {copiedKey === 'room-code' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copiedKey === 'room-code' ? 'Copied' : 'Copy Code'}</span>
+            </button>
+          </div>
+
+          <div className="rounded-xl border border-amber-500/35 bg-[#060B18] px-4 py-3 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                TV / Big Screen Code
+              </div>
+              <div className="mt-0.5 text-xl font-mono-tabular font-extrabold text-amber-300 tracking-wider">
+                {room.roomCode}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => copyText(bigScreenUrl, 'tv-quick')}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 shrink-0"
+            >
+              {copiedKey === 'tv-quick' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copiedKey === 'tv-quick' ? 'Copied' : 'Copy TV URL'}</span>
+            </button>
+          </div>
         </div>
 
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -101,7 +143,7 @@ export const QRInviteModal: React.FC<QRInviteModalProps> = ({ room, onClose }) =
               <span>Big Screen TV Broadcast</span>
             </div>
             <p className="text-xs text-slate-400">
-              Open on a projector, smart TV, or secondary monitor for live synchronized auction visuals.
+              Enter TV Code <strong className="font-mono-tabular text-amber-300">{room.roomCode}</strong> on the Big Screen TV Preview or scan the QR below.
             </p>
             <div className="rounded-xl bg-white p-3.5 shadow-inner">
               <QRCodeSVG value={bigScreenUrl} size={172} level="M" />

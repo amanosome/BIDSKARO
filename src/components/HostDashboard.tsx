@@ -390,8 +390,8 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
               onClick={() => setShowQR(true)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 whitespace-nowrap shrink-0"
             >
-              <QrCode className="w-4 h-4" />
-              <span className="hidden sm:inline">QR Invite ({room.roomCode})</span>
+              <QrCode className="w-4 h-4 shrink-0" />
+              <span className="font-mono-tabular">Invite: {room.roomCode}</span>
             </button>
             <button
               type="button"
@@ -440,6 +440,8 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
             bidFeedback={bidFeedback}
             onClearFeedback={onClearFeedback}
             onSendCommand={onSendCommand}
+            onOpenInvite={() => setShowQR(true)}
+            onOpenTV={() => setActiveTab('tv')}
             onPlaceBid={onPlaceBid}
             onLeaveRoom={() =>
               setConfirmModal({

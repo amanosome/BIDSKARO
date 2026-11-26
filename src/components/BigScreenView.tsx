@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Award, Clock, Cpu, Gavel, Lock, Maximize2, Radio, ShieldCheck } from 'lucide-react';
+import { Award, Check, Clock, Copy, Cpu, Gavel, Lock, Maximize2, Radio, ShieldCheck } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { AuctionRoomState } from '../shared/auctionTypes';
 import { formatCurrency, formatShortCurrency } from '../shared/currency';
@@ -30,9 +30,22 @@ export const BigScreenView: React.FC<BigScreenViewProps> = ({
   const isLobbyLocked = room.status === 'lobby';
   const player = isLobbyLocked ? null : room.players.find((p) => p.id === room.currentPlayerId) || null;
   const highestTeam = room.teams.find((t) => t.id === room.highestBidderTeamId) || null;
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const phoneJoinUrl = `${origin}/?room=${room.roomCode}&view=bidder`;
+  const baseUrl =
+    typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}` : '';
+  const phoneJoinUrl = `${baseUrl}?room=${encodeURIComponent(room.roomCode)}&view=bidder`;
+  const tvJoinUrl = `${baseUrl}?room=${encodeURIComponent(room.roomCode)}&view=tv`;
   const [auctionClockSeconds, setAuctionClockSeconds] = useState(0);
+  const [copiedType, setCopiedType] = useState<'invite' | 'tv' | null>(null);
+
+  const handleCopy = async (text: string, type: 'invite' | 'tv') => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedType(type);
+      window.setTimeout(() => setCopiedType(null), 1600);
+    } catch {
+      // ignore clipboard errors
+    }
+  };
 
   useEffect(() => {
     const updateClock = () => {
@@ -143,17 +156,40 @@ export const BigScreenView: React.FC<BigScreenViewProps> = ({
             </div>
           )}
 
-          {/* TV Invite Code + QR Quick Join */}
-          <div className="flex items-center gap-2.5 rounded-xl border border-emerald-500/35 bg-[#060B18] px-3 py-1.5">
-            <div className="bg-white p-1 rounded">
-              <QRCodeSVG value={phoneJoinUrl} size={34} />
+          {/* Room Invite Code & TV / Big Screen Code + QR Quick Join */}
+          <div className="flex flex-wrap items-center gap-2.5 rounded-xl border border-emerald-500/35 bg-[#060B18] px-3 py-1.5">
+            <div className="bg-white p-1 rounded shrink-0">
+              <QRCodeSVG value={phoneJoinUrl} size={36} />
             </div>
-            <div>
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider">Join Invite Code</div>
+            <button
+              type="button"
+              onClick={() => handleCopy(room.roomCode, 'invite')}
+              className="text-left hover:opacity-90"
+              title="Copy Room Invite Code"
+            >
+              <div className="text-[10px] text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                <span>Invite Code</span>
+                {copiedType === 'invite' ? <Check className="w-2.5 h-2.5 text-emerald-400" /> : <Copy className="w-2.5 h-2.5 text-slate-500" />}
+              </div>
               <div className="text-sm font-mono-tabular font-extrabold text-emerald-400 tracking-wider">
                 {room.roomCode}
               </div>
-            </div>
+            </button>
+            <div className="h-7 w-px bg-slate-800" aria-hidden="true" />
+            <button
+              type="button"
+              onClick={() => handleCopy(tvJoinUrl, 'tv')}
+              className="text-left hover:opacity-90"
+              title="Copy TV / Big Screen URL"
+            >
+              <div className="text-[10px] text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                <span>TV Screen Code</span>
+                {copiedType === 'tv' ? <Check className="w-2.5 h-2.5 text-amber-300" /> : <Copy className="w-2.5 h-2.5 text-slate-500" />}
+              </div>
+              <div className="text-sm font-mono-tabular font-extrabold text-amber-300 tracking-wider">
+                {room.roomCode}
+              </div>
+            </button>
           </div>
 
           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-300">
@@ -246,34 +282,81 @@ export const BigScreenView: React.FC<BigScreenViewProps> = ({
 
           {!isLobbyLocked && player ? (
             <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
-              <div className="grid grid-cols-3 gap-3 font-mono-tabular">
-                <div className="rounded-xl border border-slate-800 bg-[#060B18] p-3">
-                  <div className="text-[11px] text-slate-400">MATCHES</div>
-                  <div className="mt-0.5 text-lg font-bold text-white">{player.stats.matches}</div>
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  <span>Original Career Stats</span>
+                  <span className="font-mono-tabular text-emerald-400">Rating {player.rating}/100</span>
                 </div>
-                <div className="rounded-xl border border-slate-800 bg-[#060B18] p-3">
-                  <div className="text-[11px] text-slate-400">
-                    {player.sport === 'football' ? 'GOALS · xG' : 'RUNS · SR'}
+                <div className="grid grid-cols-3 gap-2 font-mono-tabular">
+                  <div className="rounded-xl border border-slate-800 bg-[#060B18] p-2.5">
+                    <div className="text-[10px] text-slate-400">MATCHES</div>
+                    <div className="mt-0.5 text-base font-bold text-white">{player.stats.matches}</div>
                   </div>
-                  <div className="mt-0.5 text-lg font-bold text-white">
-                    {player.stats.runs} <span className="text-xs text-emerald-400">({player.stats.strikeRate})</span>
+                  <div className="rounded-xl border border-slate-800 bg-[#060B18] p-2.5">
+                    <div className="text-[10px] text-slate-400">
+                      {player.sport === 'football' ? 'GOALS' : 'RUNS'}
+                    </div>
+                    <div className="mt-0.5 text-base font-bold text-white">{player.stats.runs}</div>
                   </div>
-                </div>
-                <div className="rounded-xl border border-slate-800 bg-[#060B18] p-3">
-                  <div className="text-[11px] text-slate-400">
-                    {player.sport === 'football' ? 'ASSISTS / CS' : 'WKTS · ECON'}
+                  <div className="rounded-xl border border-slate-800 bg-[#060B18] p-2.5">
+                    <div className="text-[10px] text-slate-400">
+                      {player.sport === 'football' ? 'ASSISTS' : 'AVERAGE'}
+                    </div>
+                    <div className="mt-0.5 text-base font-bold text-white">{player.stats.average}</div>
                   </div>
-                  <div className="mt-0.5 text-lg font-bold text-white">
-                    {player.sport === 'football'
-                      ? `${player.stats.average} / ${player.stats.wickets}`
-                      : (
-                        <>
-                          {player.stats.wickets} <span className="text-xs text-amber-300">({player.stats.economy || '—'})</span>
-                        </>
-                      )}
+                  <div className="rounded-xl border border-slate-800 bg-[#060B18] p-2.5">
+                    <div className="text-[10px] text-slate-400">
+                      {player.sport === 'football' ? 'xG INDEX' : 'STRIKE RATE'}
+                    </div>
+                    <div className="mt-0.5 text-base font-bold text-emerald-400">{player.stats.strikeRate}</div>
+                  </div>
+                  <div className="rounded-xl border border-slate-800 bg-[#060B18] p-2.5">
+                    <div className="text-[10px] text-slate-400">
+                      {player.sport === 'football' ? 'BEST MATCH' : 'HIGHEST'}
+                    </div>
+                    <div className="mt-0.5 text-base font-bold text-white">{player.stats.highestScore}</div>
+                  </div>
+                  <div className="rounded-xl border border-slate-800 bg-[#060B18] p-2.5">
+                    <div className="text-[10px] text-slate-400">
+                      {player.sport === 'football' ? 'MILESTONES' : '50s / 100s'}
+                    </div>
+                    <div className="mt-0.5 text-base font-bold text-white">{player.stats.fiftiesHundreds}</div>
+                  </div>
+                  <div className="rounded-xl border border-slate-800 bg-[#060B18] p-2.5">
+                    <div className="text-[10px] text-slate-400">
+                      {player.sport === 'football' ? 'CLEAN SHEETS' : 'WICKETS'}
+                    </div>
+                    <div className="mt-0.5 text-base font-bold text-white">{player.stats.wickets}</div>
+                  </div>
+                  <div className="rounded-xl border border-slate-800 bg-[#060B18] p-2.5">
+                    <div className="text-[10px] text-slate-400">
+                      {player.sport === 'football' ? 'RATING / 90' : 'ECONOMY'}
+                    </div>
+                    <div className="mt-0.5 text-base font-bold text-amber-300">{player.stats.economy || '—'}</div>
+                  </div>
+                  <div className="rounded-xl border border-slate-800 bg-[#060B18] p-2.5">
+                    <div className="text-[10px] text-slate-400">
+                      {player.sport === 'football' ? 'BEST REC' : 'BEST BWL'}
+                    </div>
+                    <div className="mt-0.5 text-base font-bold text-white truncate">{player.stats.bestBowling || '—'}</div>
                   </div>
                 </div>
               </div>
+
+              {(player.historicalNote || player.seasonsActive.length > 0) && (
+                <div className="rounded-xl border border-slate-800/90 bg-[#060B18] px-3 py-2.5 space-y-1">
+                  {player.seasonsActive.length > 0 && (
+                    <div className="text-[11px] font-mono-tabular text-slate-400">
+                      Seasons: <span className="text-slate-200">{player.seasonsActive.join(', ')}</span>
+                    </div>
+                  )}
+                  {player.historicalNote && (
+                    <div className="text-[11px] text-slate-300 leading-relaxed">
+                      {player.historicalNote}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex items-center justify-between text-xs border-t border-slate-800 pt-3">
                 <span className="text-slate-400">
