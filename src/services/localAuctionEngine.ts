@@ -1153,6 +1153,7 @@ export function createLocalRoom(body: {
   seasonYear?: string;
   hostId?: string;
   hostName?: string;
+  roomCode?: string;
   rules?: Partial<AuctionRules>;
   teams?: Array<{
     id?: string;
@@ -1249,7 +1250,7 @@ export function createLocalRoom(body: {
     baseRules.defaultTeamPurse,
     baseRules.minBidFloor
   );
-  const code = generateRoomCode();
+  const code = body.roomCode ? body.roomCode.toUpperCase().trim() : generateRoomCode();
   const hostId = body.hostId?.trim() || makeId('host');
   const hostName = body.hostName?.trim() || 'Auction Host';
 
@@ -1261,7 +1262,7 @@ export function createLocalRoom(body: {
     seasonNumber: 1,
     hostId,
     hostName,
-    isDemo: false,
+    isDemo: code === 'DEMO5',
     status: 'lobby',
     bigScreenPublished: true,
     rules: baseRules,
@@ -1343,7 +1344,23 @@ export function createLocalRoom(body: {
 export function getLocalRoom(code: string): { room: AuctionRoomState; serverTimeMs: number } | null {
   hydrateLocalRooms();
   const normalized = code.toUpperCase().trim();
-  const internal = localRooms.get(normalized);
+  let internal = localRooms.get(normalized);
+  if (!internal) {
+    try {
+      const roomName = normalized === 'DEMO5' ? 'BidsKaro 5-Team IPL Demo' : `BidsKaro Room ${normalized}`;
+      const leagueId: LeagueId = normalized.includes('WPL') ? 'WPL' : 'IPL';
+      createLocalRoom({
+        roomName,
+        leagueId,
+        seasonYear: '2025',
+        hostName: 'Auction Host',
+        roomCode: normalized,
+      });
+      internal = localRooms.get(normalized);
+    } catch {
+      // fallback
+    }
+  }
   if (!internal) return null;
   return {
     room: sanitizeRoomForClient(internal.state),
